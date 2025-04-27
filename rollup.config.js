@@ -61,7 +61,7 @@ export default ({watch}) => {
         output: {
             name: 'mapboxgl',
             file: outputFile,
-            format: 'umd',
+            format: 'esm',
             sourcemap: production ? true : 'inline',
             indent: false,
             intro: fs.readFileSync(fileURLToPath(new URL('./rollup/bundle_prelude.js', import.meta.url)), 'utf8'),

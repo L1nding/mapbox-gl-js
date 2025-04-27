@@ -9,7 +9,7 @@ function getAccessToken() {
         getURLParameter('access_token'),
         localStorage.getItem('accessToken'),
         // this token is a fallback for CI and testing. it is domain restricted to localhost
-        'pk.eyJ1IjoiZ2wtanMtdGVhbSIsImEiOiJjbTV1d3l0d3AwMThnMmpzZ2M5OTNyeDE1In0.2nygBIo7PXbkFCCt6LEBgw'
+        'pk.eyJ1IjoicmFkb25uYW1lMTIzIiwiYSI6ImNseHd5NzZiMzI3YjEyaXEzcW9iM3R1a2QifQ.MByPH0cxVAarIdVup_6MOQ'
     ].find(Boolean);
 
     try {

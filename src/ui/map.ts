@@ -4516,7 +4516,7 @@ export class Map extends Camera {
                     vendor: this.painter.context.vendor
                 });
             }
-            this._authenticate();
+            //this._authenticate();
         }
     }
 
