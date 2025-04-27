@@ -34,6 +34,8 @@ export type ModelTexture = {
     gfxTexture?: Texture;
     uploaded: boolean;
     offsetScale?: [number, number, number, number];
+    index?: number;
+    extensions?: Record<string, {offset: [number, number], scale: [number, number]}>;
 };
 
 export type PbrMetallicRoughness = {
@@ -42,6 +44,18 @@ export type PbrMetallicRoughness = {
     roughnessFactor: number;
     baseColorTexture: ModelTexture | null | undefined;
     metallicRoughnessTexture: ModelTexture | null | undefined;
+};
+
+export type MaterialDescription = {
+    emissiveFactor: [number, number, number];
+    alphaMode: string;
+    alphaCutoff: number;
+    normalTexture: ModelTexture;
+    occlusionTexture: ModelTexture;
+    emissiveTexture: ModelTexture;
+    doubleSided: boolean;
+    pbrMetallicRoughness: PbrMetallicRoughness;
+    defined?: boolean;
 };
 
 export type Material = {
@@ -105,9 +119,9 @@ export type ModelNode = {
 };
 
 export const ModelTraits = {
-    CoordinateSpaceTile : 1,
-    CoordinateSpaceYUp : 2, // not used yet.
-    HasMapboxMeshFeatures : 1 << 2,
+    CoordinateSpaceTile: 1,
+    CoordinateSpaceYUp: 2, // not used yet.
+    HasMapboxMeshFeatures: 1 << 2,
     HasMeshoptCompression: 1 << 3
 } as const;
 
@@ -316,7 +330,7 @@ export function uploadTexture(texture: ModelTexture, context: Context, useSingle
         const useMipmap = texture.sampler.minFilter >= context.gl.NEAREST_MIPMAP_NEAREST;
         texture.gfxTexture = new Texture(context, texture.image, textureFormat, {useMipmap});
         texture.uploaded = true;
-        texture.image = (null as any);
+        texture.image = null;
     }
 }
 

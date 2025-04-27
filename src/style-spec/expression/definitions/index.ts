@@ -19,6 +19,7 @@ import Literal from './literal';
 import Assertion from './assertion';
 import Coercion from './coercion';
 import At from './at';
+import AtInterpolated from './at_interpolated';
 import In from './in';
 import IndexOf from './index_of';
 import Match from './match';
@@ -46,6 +47,7 @@ import Distance from './distance';
 import {mulberry32} from '../../util/random';
 
 import type {Type} from '../types';
+import type {Value} from '../values';
 import type EvaluationContext from '../evaluation_context';
 import type {Varargs} from '../compound_expression';
 import type {Expression, ExpressionRegistry} from '../expression';
@@ -60,6 +62,7 @@ const expressions: ExpressionRegistry = {
     '<=': LessThanOrEqual,
     'array': Assertion,
     'at': At,
+    'at-interpolated': AtInterpolated,
     'boolean': Assertion,
     'case': Case,
     'coalesce': Coalesce,
@@ -98,8 +101,7 @@ function rgba(ctx: EvaluationContext, [r, g, b, a]: Expression[]) {
     const alpha = a ? a.evaluate(ctx) : 1;
     const error = validateRGBA(r, g, b, alpha);
     if (error) throw new RuntimeError(error);
-    // @ts-expect-error
-    return new Color(r / 255 * alpha, g / 255 * alpha, b / 255 * alpha, alpha);
+    return new Color(r as unknown as number / 255 * alpha, g as unknown as number / 255 * alpha, b as unknown as number / 255 * alpha, alpha);
 }
 
 function hsla(ctx: EvaluationContext, [h, s, l, a]: Expression[]) {
@@ -241,7 +243,7 @@ CompoundExpression.register(expressions, {
     'properties': [
         ObjectType,
         [],
-        (ctx) => ctx.properties()
+        (ctx) => ctx.properties() as Value
     ],
     'geometry-type': [
         StringType,
@@ -301,7 +303,7 @@ CompoundExpression.register(expressions, {
     'accumulated': [
         ValueType,
         [],
-        (ctx) => ctx.globals.accumulated === undefined ? null : ctx.globals.accumulated
+        (ctx) => (ctx.globals.accumulated === undefined ? null : ctx.globals.accumulated)
     ],
     '+': [
         NumberType,

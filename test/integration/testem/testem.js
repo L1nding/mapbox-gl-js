@@ -1,14 +1,19 @@
 /* eslint-disable import/no-commonjs */
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const runAll = require('npm-run-all');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const chokidar = require('chokidar');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const rollup = require('rollup');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const notifier = require('node-notifier');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const fs = require('fs');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const os = require('os');
-const {injectMiddlewares} = require('../lib/middlewares.cjs');
 
 // hack to be able to import ES modules inside a CommonJS one
-let generateFixtureJson, getAllFixtureGlobs, buildTape, rollupDevConfig, rollupTestConfig;
+let generateFixtureJson, getAllFixtureGlobs, buildTape, rollupDevConfig, rollupTestConfig, injectMiddlewares;
 async function loadModules() {
     const generateFixture = await import('../lib/generate-fixture-json.js');
     generateFixtureJson = generateFixture.generateFixtureJson;
@@ -17,6 +22,8 @@ async function loadModules() {
     buildTape = (await import('../../../build/test/build-tape.js')).default;
     rollupDevConfig = (await import('../../../rollup.config.js')).default;
     rollupTestConfig = (await import('../rollup.config.test.js')).default;
+    rollupTestConfig = (await import('../rollup.config.test.js')).default;
+    injectMiddlewares = (await import('../lib/middlewares.js')).injectMiddlewares;
 }
 
 const rootFixturePath = 'test/integration/';
@@ -58,9 +65,20 @@ let fixtureWatcher;
 const rollupWatchers = {};
 
 function getQueryParams() {
+    let spriteFormat = "icon_set";
+
     const params = process.argv.slice(2).filter((value, index, self) => { return self.indexOf(value) === index; }) || [];
     const filterIndex = params.findIndex((elem) => { return String(elem).startsWith("tests="); });
-    const queryParams = {};
+    const spriteFormatIndex = params.findIndex((elem) => { return String(elem).startsWith("sprite-format="); });
+
+    if (spriteFormatIndex !== -1) {
+        spriteFormat = String(params[spriteFormatIndex]).split('=')[1];
+    }
+
+    const queryParams = {
+        spriteFormat
+    };
+
     if (filterIndex !== -1) {
         const split = String(params.splice(filterIndex, 1)).split('=');
         if (split.length === 2) {
@@ -129,6 +147,7 @@ function buildArtifactsDev() {
                         resolve();
                     }
                     if (e.code === 'FATAL') {
+
                         reject(e);
                     }
                 });
@@ -145,7 +164,7 @@ function buildArtifactsDev() {
 
 function silenceWarnings(config) {
     function addEmptyWarningHandler(configObj) {
-        configObj["onwarn"] = function() {};
+        configObj["onwarn"] = function () {};
         return configObj;
     }
 
@@ -162,7 +181,7 @@ function notify(title, message) {
     }
 }
 
-module.exports = async function() {
+module.exports = async function () {
     await loadModules();
     await (ci ? buildArtifactsCi() : buildArtifactsDev());
 
@@ -174,7 +193,7 @@ module.exports = async function() {
 
     // Configuration for tests running in CI mode (i.e. test-... not watch-...)
     const ciTestemConfig = {
-        "launch_in_ci": [ browser ],
+        "launch_in_ci": [browser],
         "reporter": "xunit",
         "report_file": ciOutputFile,
         "xunit_intermediate_output": true,

@@ -30,6 +30,7 @@ import {Aabb} from '../util/primitives';
 import {getZoomAdjustment} from '../geo/projection/adjustments';
 
 import type Transform from '../geo/transform';
+import type BoxZoomHandler from './handler/box_zoom';
 import type {TaskID} from '../util/task_queue';
 import type {Callback} from '../types/callback';
 import type {MapEvents} from './events';
@@ -129,7 +130,7 @@ export type FullCameraOptions = CameraOptions & {
  * @see [Example: Slowly fly to a location](https://docs.mapbox.com/mapbox-gl-js/example/flyto-options/)
  * @see [Example: Customize camera animations](https://docs.mapbox.com/mapbox-gl-js/example/camera-animation/)
  * @see [Example: Navigate the map with game-like controls](https://docs.mapbox.com/mapbox-gl-js/example/game-controls/)
-*/
+ */
 export type AnimationOptions = {
     animate?: boolean;
     curve?: number;
@@ -202,10 +203,7 @@ class Camera extends Evented<MapEvents> {
     _onEaseEnd: (easeId?: string) => void | null | undefined;
     _easeFrameId: TaskID | null | undefined;
 
-    constructor(transform: Transform, options: {
-        bearingSnap: number;
-        respectPrefersReducedMotion?: boolean;
-    }) {
+    constructor(transform: Transform, options: {bearingSnap?: number; respectPrefersReducedMotion?: boolean}) {
         super();
         this._moving = false;
         this._zooming = false;
@@ -218,10 +216,7 @@ class Camera extends Evented<MapEvents> {
         //addAssertions(this);
     }
 
-    /** @section {Camera}
-     * @method
-     * @instance
-     * @memberof Map */
+    /** @section Camera */
 
     /**
      * Returns the map's geographical centerpoint.
@@ -815,7 +810,7 @@ class Camera extends Evented<MapEvents> {
         return extendedAABB;
     }
 
-    /** @section {Querying features} */
+    /** @section Querying features */
 
     /**
      * Queries the currently loaded data for elevation at a geographical location. The elevation is returned in `meters` relative to mean sea-level.
@@ -1685,8 +1680,8 @@ class Camera extends Evented<MapEvents> {
             const k = w1 < w0 ? -1 : 1;
             S = Math.abs(Math.log(w1 / w0)) / rho;
 
-            u = function() { return 0; };
-            w = function(s) { return Math.exp(k * rho * s); };
+            u = function () { return 0; };
+            w = function (s) { return Math.exp(k * rho * s); };
         }
 
         if ('duration' in options) {
@@ -1861,7 +1856,7 @@ class Camera extends Evented<MapEvents> {
         const frameRate = 15;
         const numFrames = Math.ceil(duration * frameRate / 1000);
 
-        const transforms = [];
+        const transforms: Transform[] = [];
         const emulateFrame = frame(initialTransform.clone());
         for (let i = 0; i <= numFrames; i++) {
             const transform = emulateFrame(i / numFrames);
@@ -1904,7 +1899,7 @@ function addAssertions(camera: Camera) { //eslint-disable-line
         });
 
         // Canary used to test whether this function is stripped in prod build
-        canary = 'canary debug run'; //eslint-disable-line
+        canary = 'canary debug run';
     });
 }
 

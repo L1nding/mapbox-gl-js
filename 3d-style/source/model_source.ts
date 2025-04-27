@@ -24,8 +24,8 @@ class ModelSource extends Evented<SourceEvents> implements ISource {
     minzoom: number;
     maxzoom: number;
     tileSize: number;
-    minTileCacheSize: number | null | undefined;
-    maxTileCacheSize: number | null | undefined;
+    minTileCacheSize?: number;
+    maxTileCacheSize?: number;
     roundZoom: boolean | undefined;
     reparseOverscaled: boolean | undefined;
     attribution: string | undefined;
@@ -53,7 +53,6 @@ class ModelSource extends Evented<SourceEvents> implements ISource {
     /**
      * @private
      */
-    // eslint-disable-next-line no-unused-vars
     constructor(id: string, options: ModelSourceSpecification, dispatcher: Dispatcher, eventedParent: Evented) {
         super();
         this.id = id;
@@ -108,7 +107,7 @@ class ModelSource extends Evented<SourceEvents> implements ISource {
     getModels(): Array<Model> {
         return this.models;
     }
-    // eslint-disable-next-line no-unused-vars
+
     loadTile(tile: Tile, callback: Callback<undefined>) {}
 
     serialize(): any {

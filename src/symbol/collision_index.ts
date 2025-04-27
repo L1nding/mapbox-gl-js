@@ -1,5 +1,4 @@
 import Point from '@mapbox/point-geometry';
-import clipLine from './clip_line';
 import PathInterpolator from './path_interpolator';
 import * as intersectionTests from '../util/intersection_tests';
 import Grid from './grid_index';
@@ -8,6 +7,8 @@ import ONE_EM from '../symbol/one_em';
 import {FOG_SYMBOL_CLIPPING_THRESHOLD, getFogOpacityAtTileCoord} from '../style/fog_helpers';
 import assert from 'assert';
 import * as symbolProjection from '../symbol/projection';
+import {degToRad} from '../util/util';
+import {clipLines} from '../util/line_clipping';
 
 import type {OverscaledTileID} from '../source/tile_id';
 import type {vec3} from 'gl-matrix';
@@ -189,6 +190,10 @@ class CollisionIndex {
         const lineOffsetX = symbol.lineOffsetX * labelPlaneFontScale;
         const lineOffsetY = symbol.lineOffsetY * labelPlaneFontScale;
 
+        const layout = bucket.layers[0].layout;
+        const textMaxAngle = degToRad(layout.get('text-max-angle'));
+        const maxAngleCos = Math.cos(textMaxAngle);
+
         const firstAndLastGlyph = screenAnchorPoint.signedDistanceFromCamera > 0 ? symbolProjection.placeFirstAndLastGlyph(
             labelPlaneFontScale,
             glyphOffsetArray,
@@ -206,7 +211,8 @@ class CollisionIndex {
             pitchWithMap && !!elevation,
             projection,
             tileID,
-            pitchWithMap
+            pitchWithMap,
+            maxAngleCos
         ) : null;
 
         let collisionDetected = false;
@@ -279,7 +285,7 @@ class CollisionIndex {
                     if (minx < screenPlaneMin.x || maxx > screenPlaneMax.x ||
                         miny < screenPlaneMin.y || maxy > screenPlaneMax.y) {
                         // Path partially visible, clip
-                        segments = clipLine(segments, screenPlaneMin.x, screenPlaneMin.y, screenPlaneMax.x, screenPlaneMax.y);
+                        segments = clipLines(segments, screenPlaneMin.x, screenPlaneMin.y, screenPlaneMax.x, screenPlaneMax.y);
                     }
                 }
             }

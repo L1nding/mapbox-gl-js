@@ -1,5 +1,5 @@
 import assert from 'assert';
-import {clone, extend, endsWith, easeCubicInOut, sphericalDirectionToCartesian, sphericalPositionToCartesian} from '../util/util';
+import {clone, extend, easeCubicInOut, sphericalDirectionToCartesian, sphericalPositionToCartesian} from '../util/util';
 import * as interpolate from '../style-spec/util/interpolate';
 import {number as interpolateValue} from '../style-spec/util/interpolate';
 import {normalizePropertyExpression} from '../style-spec/expression/index';
@@ -22,6 +22,8 @@ import type {
     CompositeExpression
 } from '../style-spec/expression/index';
 import type {ConfigOptions} from '../style-spec/types/config_options';
+import type {ImageId} from '../style-spec/expression/types/image_id';
+
 export type {ConfigOptions};
 
 type TimePoint = number;
@@ -66,7 +68,7 @@ export interface Property<T, R> {
         value: PropertyValue<T, R>,
         parameters: EvaluationParameters,
         canonical?: CanonicalTileID,
-        availableImages?: Array<string>,
+        availableImages?: ImageId[],
     ) => R;
     interpolate: (a: R, b: R, t: number) => R;
 }
@@ -108,7 +110,7 @@ export class PropertyValue<T, R> {
     possiblyEvaluate(
         parameters: EvaluationParameters,
         canonical?: CanonicalTileID,
-        availableImages?: Array<string>,
+        availableImages?: ImageId[],
     ): R {
         return this.property.possiblyEvaluate(this, parameters, canonical, availableImages);
     }
@@ -144,12 +146,12 @@ class TransitionablePropertyValue<T, R> {
     }
 
     transitioned(parameters: TransitionParameters, prior: TransitioningPropertyValue<T, R>): TransitioningPropertyValue<T, R> {
-        return new TransitioningPropertyValue(this.property, this.value, prior, // eslint-disable-line no-use-before-define
+        return new TransitioningPropertyValue(this.property, this.value, prior,
             extend({}, parameters.transition, this.transition), parameters.now);
     }
 
     untransitioned(): TransitioningPropertyValue<T, R> {
-        return new TransitioningPropertyValue(this.property, this.value, null, {}, 0); // eslint-disable-line no-use-before-define
+        return new TransitioningPropertyValue(this.property, this.value, null, {}, 0);
     }
 }
 
@@ -210,7 +212,7 @@ export class Transitionable<Props extends {[Key in keyof Props]: Props[Key]}> {
         if (properties) {
             for (const name in properties) {
                 const value = properties[name];
-                if (endsWith(name, '-transition')) {
+                if (name.endsWith('-transition')) {
                     const propName = name.slice(0, -'-transition'.length) as keyof Props;
                     if (specProperties[propName]) {
                         this.setTransition(propName, value as TransitionSpecification);
@@ -234,9 +236,9 @@ export class Transitionable<Props extends {[Key in keyof Props]: Props[Key]}> {
     }
 
     serialize(): PropertyValueSpecifications<Props> {
-        const result: any = {};
+        const result = {} as PropertyValueSpecifications<Props>;
         for (const property of Object.keys(this._values) as Array<keyof Props>) {
-            const value = this.getValue(property);
+            const value = this.getValue(property) as Props[keyof Props];
             if (value !== undefined) {
                 result[property] = value;
             }
@@ -250,7 +252,7 @@ export class Transitionable<Props extends {[Key in keyof Props]: Props[Key]}> {
     }
 
     transitioned(parameters: TransitionParameters, prior: Transitioning<Props>): Transitioning<Props> {
-        const result = new Transitioning(this._properties); // eslint-disable-line no-use-before-define
+        const result = new Transitioning(this._properties);
         for (const property of Object.keys(this._values)) {
             result._values[property] = this._values[property].transitioned(parameters, prior._values[property]);
         }
@@ -258,7 +260,7 @@ export class Transitionable<Props extends {[Key in keyof Props]: Props[Key]}> {
     }
 
     untransitioned(): Transitioning<Props> {
-        const result = new Transitioning(this._properties); // eslint-disable-line no-use-before-define
+        const result = new Transitioning(this._properties);
         for (const property of Object.keys(this._values)) {
             result._values[property] = this._values[property].untransitioned();
         }
@@ -304,7 +306,7 @@ class TransitioningPropertyValue<T, R> {
     possiblyEvaluate(
         parameters: EvaluationParameters,
         canonical?: CanonicalTileID,
-        availableImages?: Array<string>,
+        availableImages?: ImageId[],
     ): R {
         const now = parameters.now || 0;
         const finalValue = this.value.possiblyEvaluate(parameters, canonical, availableImages);
@@ -366,9 +368,9 @@ export class Transitioning<Props extends {
     possiblyEvaluate(
         parameters: EvaluationParameters,
         canonical?: CanonicalTileID,
-        availableImages?: Array<string>,
+        availableImages?: ImageId[],
     ): PossiblyEvaluated<Props> {
-        const result = new PossiblyEvaluated(this._properties); // eslint-disable-line no-use-before-define
+        const result = new PossiblyEvaluated(this._properties);
         for (const property of Object.keys(this._values)) {
             result._values[property] = this._values[property].possiblyEvaluate(parameters, canonical, availableImages);
         }
@@ -447,9 +449,9 @@ export class Layout<Props extends {
     }
 
     serialize(): PropertyValueSpecifications<Props> {
-        const result: any = {};
+        const result = {} as PropertyValueSpecifications<Props>;
         for (const property of Object.keys(this._values) as Array<keyof Props>) {
-            const value = this.getValue(property);
+            const value = this.getValue(property) as Props[keyof Props];
             if (value !== undefined) {
                 result[property] = value;
             }
@@ -460,9 +462,9 @@ export class Layout<Props extends {
     possiblyEvaluate(
         parameters: EvaluationParameters,
         canonical?: CanonicalTileID,
-        availableImages?: Array<string>,
+        availableImages?: ImageId[],
     ): PossiblyEvaluated<Props> {
-        const result = new PossiblyEvaluated(this._properties); // eslint-disable-line no-use-before-define
+        const result = new PossiblyEvaluated(this._properties);
         for (const property of Object.keys(this._values)) {
             result._values[property] = this._values[property].possiblyEvaluate(parameters, canonical, availableImages);
         }
@@ -533,7 +535,7 @@ export class PossiblyEvaluatedPropertyValue<T> {
         feature: Feature,
         featureState: FeatureState,
         canonical?: CanonicalTileID,
-        availableImages?: Array<string>,
+        availableImages?: ImageId[],
     ): T {
         return this.property.evaluate(this.value, this.parameters, feature, featureState, canonical, availableImages);
     }
@@ -595,7 +597,7 @@ export class DataConstantProperty<T> implements Property<T, T> {
 
     possiblyEvaluate(value: PropertyValue<T, T>, parameters: EvaluationParameters): T {
         assert(!value.isDataDriven());
-        return value.expression.evaluate(parameters);
+        return value.expression.evaluate(parameters) as T;
     }
 
     interpolate(a: T, b: T, t: number): T {
@@ -633,10 +635,10 @@ export class DataDrivenProperty<T> implements Property<T, PossiblyEvaluatedPrope
         value: PropertyValue<T, PossiblyEvaluatedPropertyValue<T>>,
         parameters: EvaluationParameters,
         canonical?: CanonicalTileID,
-        availableImages?: Array<string>,
+        availableImages?: ImageId[],
     ): PossiblyEvaluatedPropertyValue<T> {
         if (value.expression.kind === 'constant' || value.expression.kind === 'camera') {
-            return new PossiblyEvaluatedPropertyValue(this, {kind: 'constant', value: value.expression.evaluate(parameters, (null as any), {}, canonical, availableImages)}, parameters);
+            return new PossiblyEvaluatedPropertyValue<T>(this, {kind: 'constant', value: value.expression.evaluate(parameters, null, {}, canonical, availableImages)}, parameters);
         } else {
             return new PossiblyEvaluatedPropertyValue(this, value.expression, parameters);
         }
@@ -660,10 +662,10 @@ export class DataDrivenProperty<T> implements Property<T, PossiblyEvaluatedPrope
         // `Properties#defaultPossiblyEvaluatedValues`, which serves as the prototype of
         // `PossiblyEvaluated#_values`.
         if (a.value.value === undefined || b.value.value === undefined) {
-            return new PossiblyEvaluatedPropertyValue(this, {kind: 'constant', value: (undefined as any)}, a.parameters);
+            return new PossiblyEvaluatedPropertyValue<T>(this, {kind: 'constant', value: undefined}, a.parameters);
         }
 
-        const interp: (a: T, b: T, t: number) => T | null | undefined = (interpolate as any)[this.specification.type];
+        const interp: (a: T, b: T, t: number) => T | null | undefined = interpolate[this.specification.type];
         if (interp) {
             return new PossiblyEvaluatedPropertyValue(this, {kind: 'constant', value: interp(a.value.value, b.value.value, t)}, a.parameters);
         } else {
@@ -677,12 +679,12 @@ export class DataDrivenProperty<T> implements Property<T, PossiblyEvaluatedPrope
         feature: Feature,
         featureState: FeatureState,
         canonical?: CanonicalTileID,
-        availableImages?: Array<string>,
+        availableImages?: ImageId[],
     ): T {
         if (value.kind === 'constant') {
             return value.value;
         } else {
-            return value.evaluate(parameters, feature, featureState, canonical, availableImages);
+            return value.evaluate(parameters, feature, featureState, canonical, availableImages) as T;
         }
     }
 }
@@ -705,9 +707,9 @@ export class ColorRampProperty implements Property<Color, boolean> {
         value: PropertyValue<Color, boolean>,
         parameters: EvaluationParameters,
         canonical?: CanonicalTileID,
-        availableImages?: Array<string>,
+        availableImages?: ImageId[],
     ): boolean {
-        return !!value.expression.evaluate(parameters, (null as any), {}, canonical, availableImages);
+        return !!value.expression.evaluate(parameters, null, {}, canonical, availableImages);
     }
 
     interpolate(): boolean { return false; }

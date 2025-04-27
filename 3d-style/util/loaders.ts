@@ -12,7 +12,7 @@ import {MeshoptDecoder} from './meshopt_decoder';
 
 import type {Class} from '../../src/types/class';
 
-let dispatcher = null;
+let dispatcher: Dispatcher | null = null;
 
 let dracoLoading: Promise<any> | undefined;
 let dracoUrl: string | null | undefined;
@@ -218,8 +218,8 @@ const MESHOPT_EXT = 'EXT_meshopt_compression';
 
 function loadMeshoptBuffer(bufferView: any, gltf: any) {
 
-    if (!(bufferView.extensions && bufferView.extensions[ MESHOPT_EXT ])) return;
-    const config = bufferView.extensions[ MESHOPT_EXT ];
+    if (!(bufferView.extensions && bufferView.extensions[MESHOPT_EXT])) return;
+    const config = bufferView.extensions[MESHOPT_EXT];
     const byteOffset = config.byteOffset || 0;
     const byteLength = config.byteLength || 0;
 

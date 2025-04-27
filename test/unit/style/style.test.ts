@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 import {
     describe,
@@ -7,7 +8,7 @@ import {
     waitFor,
     vi,
 } from '../../util/vitest';
-import {getPNGResponse, mockFetch} from '../../util/network';
+import {mockFetch} from '../../util/network';
 import Style from '../../../src/style/style';
 import SourceCache from '../../../src/source/source_cache';
 import StyleLayer from '../../../src/style/style_layer';
@@ -20,7 +21,9 @@ import {
     clearRTLTextPlugin,
     evented as rtlTextPluginEvented
 } from '../../../src/source/rtl_text_plugin';
+import Tile from '../../../src/source/tile';
 import {OverscaledTileID} from '../../../src/source/tile_id';
+import {ImageId} from '../../../src/style-spec/expression/types/image_id';
 import {StubMap} from './utils';
 
 function createStyleJSON(properties) {
@@ -358,7 +361,7 @@ test('Style#update', () => {
         style.addLayer({id: 'third', source: 'source', type: 'fill', 'source-layer': 'source-layer'});
         style.removeLayer('second');
 
-        style.dispatcher.broadcast = function(key, value) {
+        style.dispatcher.broadcast = function (key, value) {
             expect(key).toEqual('updateLayers');
             expect(value.layers.map((layer) => { return layer.id; })).toEqual(['first', 'third']);
             expect(value.removedIds).toEqual(['second']);
@@ -771,7 +774,7 @@ describe('Style#addLayer', () => {
             "type": "geojson",
             "data": {
                 "type": "Point",
-                "coordinates": [ 0, 0]
+                "coordinates": [0, 0]
             }
         };
         const layer = {id: 'inline-source-layer', type: 'circle', source};
@@ -1448,7 +1451,7 @@ describe('Style#setFilter', () => {
         const style = createStyle();
 
         await waitFor(style, "style.load");
-        style.dispatcher.broadcast = function(key, value) {
+        style.dispatcher.broadcast = function (key, value) {
             expect(key).toEqual('updateLayers');
             expect(value.layers[0].id).toEqual('symbol');
             expect(value.layers[0].filter).toEqual(['==', 'id', 1]);
@@ -1481,7 +1484,7 @@ describe('Style#setFilter', () => {
         style.setFilter('symbol', filter);
         style.update({}); // flush pending operations
 
-        style.dispatcher.broadcast = function(key, value) {
+        style.dispatcher.broadcast = function (key, value) {
             expect(key).toEqual('updateLayers');
             expect(value.layers[0].id).toEqual('symbol');
             expect(value.layers[0].filter).toEqual(['==', 'id', 2]);
@@ -1537,7 +1540,7 @@ describe('Style#setFilter', () => {
         const style = createStyle();
 
         await waitFor(style, "style.load");
-        style.dispatcher.broadcast = function(key, value) {
+        style.dispatcher.broadcast = function (key, value) {
             expect(key).toEqual('updateLayers');
             expect(value.layers[0].id).toEqual('symbol');
             expect(value.layers[0].filter).toEqual('notafilter');
@@ -1575,7 +1578,7 @@ describe('Style#setLayerZoomRange', () => {
         const style = createStyle();
 
         await waitFor(style, "style.load");
-        style.dispatcher.broadcast = function(key, value) {
+        style.dispatcher.broadcast = function (key, value) {
             expect(key).toEqual('updateLayers');
             expect(value.map((layer) => { return layer.id; })).toEqual(['symbol']);
         };
@@ -1803,7 +1806,7 @@ describe('Style#query*Features', () => {
 });
 
 describe('Style#addSourceType', () => {
-    const _types = {'existing' () {}};
+    const _types = {'existing'() {}};
 
     beforeEach(() => {
         vi.spyOn(Style, 'getSourceType').mockImplementation(name => _types[name]);
@@ -2182,4 +2185,191 @@ describe('Style#setColorTheme', () => {
         await waitFor(style, "colorthemeset");
         expect(style._styleColorTheme.lut).toEqual(null);
     });
+});
+
+test('Style#addImage', async () => {
+    const style = new Style(new StubMap());
+    style.loadJSON(createStyleJSON());
+    await waitFor(style, 'style.load');
+
+    const errorSpy = vi.fn();
+    style.on('error', errorSpy);
+    vi.spyOn(style, 'fire');
+    vi.spyOn(style.dispatcher, 'broadcast');
+
+    const imageId = ImageId.from('image');
+    style.addImage(imageId, style.scope, {});
+
+    expect(style._changes.isDirty()).toEqual(true);
+
+    expect(style.dispatcher.broadcast).toHaveBeenCalledTimes(1);
+    expect(style.dispatcher.broadcast).toHaveBeenLastCalledWith(
+        'setImages',
+        {scope: '', images: [imageId]}
+    );
+
+    expect(style.fire).toHaveBeenCalledTimes(1);
+    expect(style.fire).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+            type: 'data',
+            dataType: 'style'
+        })
+    );
+
+    // Adding an image with the same name should fire an error
+    style.addImage(imageId, style.scope, {});
+
+    expect(errorSpy).toHaveBeenCalledTimes(1);
+    expect(errorSpy).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+            type: 'error',
+            error: expect.objectContaining({message: 'An image with the name "image" already exists.'})
+        })
+    );
+});
+
+test('Style#addImages', async () => {
+    const style = new Style(new StubMap());
+    style.loadJSON(createStyleJSON());
+    await waitFor(style, 'style.load');
+
+    vi.spyOn(style, 'fire');
+    vi.spyOn(style.dispatcher, 'broadcast');
+
+    const styleImageMap = new Map();
+    const imageId1 = ImageId.from('image1');
+    const imageId2 = ImageId.from('image2');
+    styleImageMap.set(imageId1, {});
+    styleImageMap.set(imageId2, {});
+    style.addImages(styleImageMap, style.scope);
+
+    expect(style._changes.isDirty()).toEqual(true);
+
+    expect(style.dispatcher.broadcast).toHaveBeenCalledTimes(1);
+    expect(style.dispatcher.broadcast).toHaveBeenLastCalledWith(
+        'setImages',
+        {scope: '', images: [imageId1, imageId2]}
+    );
+
+    expect(style.fire).toHaveBeenCalledTimes(1);
+    expect(style.fire).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+            type: 'data',
+            dataType: 'style'
+        })
+    );
+});
+
+test('Style#updateImage', async () => {
+    const style = new Style(new StubMap());
+    style.loadJSON(createStyleJSON());
+    await waitFor(style, 'style.load');
+
+    const imageId = ImageId.from('image');
+    style.addImage(imageId, style.scope, {width: 1, height: 1, data: new Uint8Array(4)});
+    style.update({}); // reset style changes
+
+    vi.spyOn(style, 'fire');
+    vi.spyOn(style.dispatcher, 'broadcast');
+
+    // Basic update does not trigger update in Workers
+    style.updateImage(imageId, style.scope, {width: 1, height: 1, data: new Uint8Array(4)});
+
+    expect(style._changes.isDirty()).toEqual(false);
+    expect(style.dispatcher.broadcast).toHaveBeenCalledTimes(0);
+    expect(style.fire).toHaveBeenCalledTimes(0);
+
+    // Performing symbol layout must trigger update in Workers
+    style.updateImage(imageId, style.scope, {width: 1, height: 1, data: new Uint8Array(4)}, true);
+
+    expect(style._changes.isDirty()).toEqual(true);
+    expect(style.dispatcher.broadcast).toHaveBeenCalledTimes(1);
+    expect(style.dispatcher.broadcast).toHaveBeenLastCalledWith(
+        'setImages',
+        {scope: '', images: [imageId]}
+    );
+
+    expect(style.fire).toHaveBeenCalledTimes(1);
+    expect(style.fire).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+            type: 'data',
+            dataType: 'style'
+        })
+    );
+});
+
+test('Style#removeImage', async () => {
+    const style = new Style(new StubMap());
+    style.loadJSON(createStyleJSON());
+    await waitFor(style, 'style.load');
+
+    const imageId = ImageId.from('image');
+    style.addImage(imageId, style.scope, {});
+    style.update({}); // reset style changes
+
+    vi.spyOn(style, 'fire');
+    vi.spyOn(style.dispatcher, 'broadcast');
+
+    style.removeImage(imageId, style.scope);
+
+    expect(style._changes.isDirty()).toEqual(true);
+    expect(style.dispatcher.broadcast).toHaveBeenCalledTimes(1);
+    expect(style.dispatcher.broadcast).toHaveBeenLastCalledWith(
+        'setImages',
+        {scope: '', images: []}
+    );
+
+    expect(style.fire).toHaveBeenCalledTimes(1);
+    expect(style.fire).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+            type: 'data',
+            dataType: 'style'
+        })
+    );
+});
+
+test('Style#_updateTilesForChangedImages', async () => {
+    const style = new Style(new StubMap());
+
+    style.loadJSON(createStyleJSON({sources: {geojson: {type: 'geojson', data: {type: 'FeatureCollection', features: []}}}}));
+
+    await waitFor(style, 'style.load');
+    vi.spyOn(style, '_updateTilesForChangedImages');
+
+    const sourceCache = style.getSourceCache('geojson');
+    vi.spyOn(sourceCache, 'setDependencies');
+    vi.spyOn(sourceCache, 'reloadTilesForDependencies');
+
+    const imageId = ImageId.from('missing-image');
+    const imageIdStr = imageId.toString();
+    const tileID = new OverscaledTileID(0, 0, 0, 0, 0);
+
+    const tile = new Tile(tileID);
+    sourceCache._tiles[tileID.key] = tile;
+    vi.spyOn(tile, 'setDependencies');
+
+    await new Promise((resolve) => {
+        expect(tile.hasDependency(['icons'], [imageIdStr])).toEqual(false);
+
+        style.getImages(0, {images: [imageId], source: 'geojson', scope: '', tileID, type: 'icons'}, (err, result) => {
+            expect(err).toBeFalsy();
+            expect(result.size).toEqual(0);
+            resolve();
+        });
+    });
+
+    expect(style._updateTilesForChangedImages).toHaveBeenCalledTimes(1);
+    expect(sourceCache.setDependencies).toHaveBeenCalledTimes(1);
+    expect(sourceCache.setDependencies).toHaveBeenCalledWith(tileID.key, 'icons', [imageIdStr]);
+
+    expect(tile.setDependencies).toHaveBeenCalledTimes(1);
+    expect(tile.setDependencies).toHaveBeenCalledWith('icons', [imageIdStr]);
+    expect(tile.hasDependency(['icons'], [imageIdStr])).toEqual(true);
+
+    style.addImage(imageId, style.scope, {});
+    style.update({});
+
+    expect(style._updateTilesForChangedImages).toHaveBeenCalledTimes(2);
+    expect(sourceCache.reloadTilesForDependencies).toHaveBeenCalledTimes(1);
+    expect(sourceCache.reloadTilesForDependencies).toHaveBeenCalledWith(['icons', 'patterns'], [imageIdStr]);
 });

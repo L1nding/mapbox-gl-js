@@ -69,15 +69,15 @@ export class Vignette {
             painter.uploadCommonUniforms(painter.context, program);
 
             const uniforms = vignetteUniformValues({
-                vignetteShape:[params.start, params.range, Math.pow(10.0, params.fadePower)],
-                vignetteColor:[params.color.r, params.color.g, params.color.b, params.color.a * params.strength],
+                vignetteShape: [params.start, params.range, Math.pow(10.0, params.fadePower)],
+                vignetteColor: [params.color.r, params.color.g, params.color.b, params.color.a * params.strength],
             });
 
             const gl = painter.context.gl;
 
             program.draw(painter, gl.TRIANGLES, DepthMode.disabled, StencilMode.disabled,
                     ColorMode.alphaBlended, CullFaceMode.disabled, uniforms, "vignette",
-                    this.vignetteVx, this.vignetteIdx, vignetteSegments, {});
+                    this.vignetteVx, this.vignetteIdx, vignetteSegments);
         }
     }
 }

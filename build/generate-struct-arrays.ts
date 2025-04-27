@@ -12,6 +12,8 @@ import fs from 'fs';
 import ejs from 'ejs';
 import {extend} from '../src/util/util';
 import {createLayout, viewTypes} from '../src/util/struct_array';
+
+// eslint-disable-next-line import/order
 import type {ViewType, StructArrayLayout, StructArrayMember} from '../src/util/struct_array';
 
 const structArrayLayoutJs = ejs.compile(fs.readFileSync('src/util/struct_array_layout.js.ejs', 'utf8'), {strict: true});
@@ -40,6 +42,7 @@ const arraysWithStructAccessors: ArrayWithStructAccessors[] = [];
 const arrayTypeEntries = new Set();
 const layoutCache: Record<string, any> = {};
 
+// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
 function normalizeMembers(members: StructArrayMember[], usedTypes: Set<string | ViewType>): StructArrayMember[] {
     return members.map((member) => {
         if (usedTypes && !usedTypes.has(member.type)) {
@@ -117,7 +120,7 @@ function sizeOf(type: ViewType): number {
     return viewTypes[type].BYTES_PER_ELEMENT;
 }
 
-function camelize (str: string) {
+function camelize(str: string) {
     return str.replace(/(?:^|[-_])(.)/g, (_, x) => {
         return /^[0-9]$/.test(x) ? _ : x.toUpperCase();
     });
@@ -127,6 +130,7 @@ global.camelize = camelize;
 
 import particleAttributes from '../src/data/particle_attributes';
 import posAttributes, {posAttributesGlobeExt} from '../src/data/pos_attributes';
+// eslint-disable-next-line import/order
 import boundsAttributes from '../src/data/bounds_attributes';
 
 createStructArrayType('pos', posAttributes);
@@ -134,7 +138,7 @@ createStructArrayType('pos_globe_ext', posAttributesGlobeExt);
 createStructArrayType('raster_bounds', boundsAttributes);
 
 import {circleAttributes, circleGlobeAttributesExt} from '../src/data/bucket/circle_attributes';
-import fillAttributes from '../src/data/bucket/fill_attributes';
+import {fillLayoutAttributes, fillLayoutAttributesExt, intersectionsAttributes, intersectionNormalAttributes as intersectionsNormalAttributes} from '../src/data/bucket/fill_attributes';
 import {lineLayoutAttributes, lineZOffsetAttributes} from '../src/data/bucket/line_attributes';
 import lineAttributesExt from '../src/data/bucket/line_attributes_ext';
 import lineAttributesPattern from '../src/data/bucket/line_attributes_pattern';
@@ -142,12 +146,16 @@ import patternAttributes from '../src/data/bucket/pattern_attributes';
 import dashAttributes from '../src/data/bucket/dash_attributes';
 import skyboxAttributes from '../src/render/skybox_attributes';
 import {fillExtrusionGroundAttributes, fillExtrusionAttributes, fillExtrusionAttributesExt, centroidAttributes, hiddenByLandmarkAttributes, wallAttributes} from '../src/data/bucket/fill_extrusion_attributes';
+// eslint-disable-next-line import/order
 import {modelAttributes, color3fAttributes, color4fAttributes, normalAttributes, texcoordAttributes, instanceAttributes, featureAttributes} from '../3d-style/data/model_attributes';
 
 // layout vertex arrays
 const layoutAttributes = {
     circle: circleAttributes,
-    fill: fillAttributes,
+    fill: fillLayoutAttributes,
+    fillExt: fillLayoutAttributesExt,
+    fillIntersections: intersectionsAttributes,
+    fillIntersectionsNormal: intersectionsNormalAttributes,
     'fill-extrusion': fillExtrusionAttributes,
     'fill-extrusion-ground': fillExtrusionGroundAttributes,
     heatmap: circleAttributes,
@@ -165,6 +173,7 @@ for (const name in layoutAttributes) {
 createStructArrayType('fill_extrusion_ext', fillExtrusionAttributesExt);
 
 // symbol layer specific arrays
+// eslint-disable-next-line import/order
 import {
     symbolLayoutAttributes,
     symbolGlobeExtAttributes,
@@ -202,16 +211,20 @@ createStructArrayType('symbol_line_vertex', lineVertex, true);
 createStructArrayType('z_offset_vertex', zOffsetAttributes);
 
 import globeAttributes from '../src/terrain/globe_attributes';
+// eslint-disable-next-line import/order
 import {atmosphereLayout} from '../src/render/atmosphere_attributes';
 createStructArrayType('globe_vertex', globeAttributes);
 createStructArrayType('atmosphere_vertex', atmosphereLayout);
 
+// eslint-disable-next-line import/order
 import {starsLayout} from '../src/render/stars_attributes';
 createStructArrayType('stars_vertex', starsLayout);
 
+// eslint-disable-next-line import/order
 import {snowLayout} from '../src/precipitation/snow_attributes.js';
 createStructArrayType('snow_vertex', snowLayout);
 
+// eslint-disable-next-line import/order
 import {rainLayout} from '../src/precipitation/rain_attributes.js';
 createStructArrayType('rain_vertex', rainLayout);
 
@@ -312,10 +325,13 @@ import {register} from '../util/web_worker_transfer';
 
 import type {IStructArrayLayout} from '../util/struct_array';
 
-${layouts.map(structArrayLayoutJs).join('\n')}
-${arraysWithStructAccessors.map(structArrayJs).join('\n')}
+${// eslint-disable-next-line @typescript-eslint/no-base-to-string
+    layouts.map(structArrayLayoutJs).join('\n')}
+${// eslint-disable-next-line @typescript-eslint/no-base-to-string
+    arraysWithStructAccessors.map(structArrayJs).join('\n')}
 export {
     ${layouts.map(layout => layout.className).join(',\n    ')},
-    ${[...arrayTypeEntries].join(',\n    ')}
+    ${// eslint-disable-next-line @typescript-eslint/no-base-to-string
+    [...arrayTypeEntries].join(',\n    ')}
 };
 `);

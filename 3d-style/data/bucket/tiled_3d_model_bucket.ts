@@ -11,6 +11,8 @@ import {ZoomConstantExpression} from '../../../src/style-spec/expression/index';
 import {Aabb} from '../../../src/util/primitives';
 import {vec3, mat4} from 'gl-matrix';
 import deepEqual from '../../../src/style-spec/util/deep_equal';
+import featureFilter, {type FeatureFilter} from '../../../src/style-spec/feature_filter/index';
+import EvaluationParameters from '../../../src/style/evaluation_parameters';
 
 import type {OverscaledTileID, CanonicalTileID, UnwrappedTileID} from '../../../src/source/tile_id';
 import type ModelStyleLayer from '../../style/style_layer/model_style_layer';
@@ -19,7 +21,7 @@ import type {Bucket} from '../../../src/data/bucket';
 import type {ModelNode} from '../model';
 import type {EvaluationFeature} from '../../../src/data/evaluation_feature';
 import type Context from '../../../src/gl/context';
-import type {ProjectionSpecification} from '../../../src/style-spec/types';
+import type {FilterSpecification, ProjectionSpecification} from '../../../src/style-spec/types';
 import type Painter from '../../../src/render/painter';
 import type {vec4} from 'gl-matrix';
 import type {Terrain} from '../../../src/terrain/terrain';
@@ -28,6 +30,7 @@ import type {GridIndex} from '../../../src/types/grid-index';
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {FeatureStates} from '../../../src/source/source_state';
 import type {FeatureState} from '../../../src/style-spec/expression/index';
+import type {PossiblyEvaluatedValue} from '../../../src/style/properties';
 
 const lookup = new Float32Array(512 * 512);
 const passLookup = new Uint8Array(512 * 512);
@@ -100,7 +103,7 @@ export class Tiled3dModelFeature {
         this.emissionHeightBasedParams = [];
         this.cameraCollisionOpacity = 1;
         // Needs to calculate geometry
-        this.feature = {type: 'Point', id: node.id, geometry: [], properties: {'height' : getNodeHeight(node)}};
+        this.feature = {type: 'Point', id: node.id, geometry: [], properties: {'height': getNodeHeight(node)}};
         this.aabb = this._getLocalBounds();
         this.state = null;
     }
@@ -144,6 +147,7 @@ class Tiled3dModelBucket implements Bucket {
     brightness: number | null | undefined;
     needsUpload: boolean;
     states: FeatureStates;
+    filter: FeatureFilter | null;
     constructor(
         layers: Array<ModelStyleLayer>,
         nodes: Array<ModelNode>,
@@ -174,6 +178,7 @@ class Tiled3dModelBucket implements Bucket {
         this.brightness = brightness;
         this.dirty = true;
         this.needsUpload = false;
+        this.filter = null;
 
         this.nodesInfo = [];
         for (const node of nodes) {
@@ -533,7 +538,16 @@ class Tiled3dModelBucket implements Bucket {
         }
     }
 
+    setFilter(filterSpec: FilterSpecification | null) {
+        this.filter = filterSpec ? featureFilter(filterSpec) : null;
+    }
+
     getNodesInfo(): Array<Tiled3dModelFeature> {
+        if (this.filter) {
+            return this.nodesInfo.filter((node) => {
+                return this.filter.filter(new EvaluationParameters(this.id.overscaledZ), node.feature, this.id.canonical);
+            });
+        }
         return this.nodesInfo;
     }
 
@@ -578,7 +592,7 @@ class Tiled3dModelBucket implements Bucket {
 
         const tmpVertex = [0, 0, 0];
 
-        const nodeInverse = mat4.identity([] as any);
+        const nodeInverse = mat4.identity([] as unknown as mat4);
 
         for (let i = 0; i < this.nodesInfo.length; i++) {
             const nodeInfo = nodesInfo[i];
@@ -613,9 +627,14 @@ class Tiled3dModelBucket implements Bucket {
     }
 }
 
-function expressionRequiresReevaluation(e: any, brightnessChanged: boolean): boolean {
+function expressionRequiresReevaluation<T>(e: PossiblyEvaluatedValue<T>, brightnessChanged: boolean): boolean {
     assert(e.kind === 'constant' || e instanceof ZoomConstantExpression);
-    return !e.isLightConstant && brightnessChanged;
+
+    if (e instanceof ZoomConstantExpression) {
+        return !e.isLightConstant && brightnessChanged;
+    }
+
+    return false;
 }
 
 function encodeEmissionToByte(emission: number) {

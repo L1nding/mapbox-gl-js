@@ -1,3 +1,4 @@
+import browser from '../../src/util/browser';
 import {Evented, ErrorEvent, Event} from '../../src/util/evented';
 import {ResourceType} from '../../src/util/ajax';
 import loadTileJSON from '../../src/source/load_tilejson';
@@ -18,8 +19,9 @@ import type {Callback} from '../../src/types/callback';
 import type {Cancelable} from '../../src/types/cancelable';
 import type {OverscaledTileID} from '../../src/source/tile_id';
 import type {ISource, SourceEvents} from '../../src/source/source';
-import type {ModelSourceSpecification} from '../../src/style-spec/types';
-import type {RequestedTileParameters, WorkerTileResult} from '../../src/source/worker_source';
+import type {ModelSourceSpecification, PromoteIdSpecification} from '../../src/style-spec/types';
+import type {WorkerSourceTiled3dModelRequest, WorkerSourceVectorTileResult} from '../../src/source/worker_source';
+import type {AJAXError} from '../../src/util/ajax';
 
 class Tiled3DModelSource extends Evented<SourceEvents> implements ISource {
     type: 'batched-model';
@@ -32,11 +34,12 @@ class Tiled3DModelSource extends Evented<SourceEvents> implements ISource {
     reparseOverscaled: boolean | undefined;
     usedInConflation: boolean;
     tileSize: number;
-    minTileCacheSize: number | null | undefined;
-    maxTileCacheSize: number | null | undefined;
+    minTileCacheSize?: number;
+    maxTileCacheSize?: number;
     attribution: string | undefined;
     // eslint-disable-next-line camelcase
     mapbox_logo: boolean | undefined;
+    promoteId?: PromoteIdSpecification | null;
     vectorLayers?: never;
     vectorLayerIds?: never;
     rasterLayers?: never;
@@ -66,7 +69,7 @@ class Tiled3DModelSource extends Evented<SourceEvents> implements ISource {
         this.tileSize = 512;
 
         this._options = options;
-        this.tiles = (this._options.tiles as any);
+        this.tiles = this._options.tiles;
         this.maxzoom = options.maxzoom || 19;
         this.minzoom = options.minzoom || 0;
         this.roundZoom = true;
@@ -136,9 +139,9 @@ class Tiled3DModelSource extends Evented<SourceEvents> implements ISource {
     }
 
     loadTile(tile: Tile, callback: Callback<undefined>) {
-        const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url((this.tiles as any), this.scheme));
+        const url = this.map._requestManager.normalizeTileURL(tile.tileID.canonical.url(this.tiles, this.scheme));
         const request = this.map._requestManager.transformRequest(url, ResourceType.Tile);
-        const params: RequestedTileParameters = {
+        const params: WorkerSourceTiled3dModelRequest = {
             request,
             data: undefined,
             uid: tile.uid,
@@ -152,12 +155,8 @@ class Tiled3DModelSource extends Evented<SourceEvents> implements ISource {
             showCollisionBoxes: this.map.showCollisionBoxes,
             isSymbolTile: tile.isSymbolTile,
             brightness: this.map.style ? (this.map.style.getBrightness() || 0.0) : 0.0,
-            // Not supported in 3D models
-            lut: null,
-            maxZoom: null,
-            promoteId: null,
-            pixelRatio: null,
-            scaleFactor: null,
+            pixelRatio: browser.devicePixelRatio,
+            promoteId: this.promoteId,
         };
 
         if (!tile.actor || tile.state === 'expired') {
@@ -179,10 +178,9 @@ class Tiled3DModelSource extends Evented<SourceEvents> implements ISource {
             tile.request = tile.actor.send('reloadTile', params, done.bind(this));
         }
 
-        function done(err?: Error | null, data?: WorkerTileResult | null) {
+        function done(err?: AJAXError | null, data?: WorkerSourceVectorTileResult | null) {
             if (tile.aborted) return callback(null);
 
-            // @ts-expect-error - TS2339 - Property 'status' does not exist on type 'Error'.
             if (err && err.status !== 404) {
                 return callback(err);
             }

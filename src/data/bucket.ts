@@ -17,8 +17,9 @@ import type {ProjectionSpecification} from '../style-spec/types';
 import type {VectorTileFeature, VectorTileLayer} from '@mapbox/vector-tile';
 import type {TileFootprint} from '../../3d-style/util/conflation';
 import type {LUT} from "../util/lut";
-import type {ImageIdWithOptions} from '../style-spec/expression/types/image_id_with_options';
-import type {ElevationFeature} from './elevation_feature';
+import type {ImageVariant} from '../style-spec/expression/types/image_variant';
+import type {ElevationFeature} from '../../3d-style/elevation/elevation_feature';
+import type {ImageId, StringifiedImageId} from '../style-spec/expression/types/image_id';
 
 export type BucketParameters<Layer extends TypedStyleLayer> = {
     index: number;
@@ -35,12 +36,16 @@ export type BucketParameters<Layer extends TypedStyleLayer> = {
     tessellationStep: number | null | undefined;
 };
 
+export type ImageDependenciesMap = Map<StringifiedImageId, Array<ImageVariant>>;
+
+export type GlyphDependencies = Record<string, Record<number, boolean>>;
+
 export type PopulateParameters = {
     featureIndex: FeatureIndex;
-    iconDependencies: Record<string, Array<ImageIdWithOptions>>;
-    patternDependencies: Record<string, Array<ImageIdWithOptions>>;
-    glyphDependencies: Record<any, any>;
-    availableImages: Array<string>;
+    iconDependencies: ImageDependenciesMap;
+    patternDependencies: ImageDependenciesMap;
+    glyphDependencies: GlyphDependencies;
+    availableImages: ImageId[];
     lineAtlas: LineAtlas;
     brightness: number | null | undefined;
     scaleFactor: number;
@@ -58,12 +63,10 @@ export type BucketFeature = {
     index: number;
     sourceLayerIndex: number;
     geometry: Array<Array<Point>>;
-    properties: any;
+    properties: Record<PropertyKey, unknown>;
     type: 0 | 1 | 2 | 3;
-    id?: any;
-    readonly patterns: {
-        [_: string]: string;
-    };
+    id?: string | number | null;
+    readonly patterns: Record<string, string>;
     sortKey?: number;
 };
 
@@ -93,8 +96,8 @@ export type BucketFeature = {
 export interface Bucket {
     layerIds: Array<string>;
     hasPattern: boolean;
-    readonly layers: Array<any>;
-    readonly stateDependentLayers: Array<any>;
+    layers: Array<any>;
+    stateDependentLayers: Array<any>;
     readonly stateDependentLayerIds: Array<string>;
     populate: (
         features: Array<IndexedFeature>,
@@ -105,7 +108,7 @@ export interface Bucket {
     update: (
         states: FeatureStates,
         vtLayer: VectorTileLayer,
-        availableImages: Array<string>,
+        availableImages: ImageId[],
         imagePositions: SpritePositions,
         layers: Array<TypedStyleLayer>,
         isBrightnessChanged: boolean,
@@ -143,10 +146,9 @@ export function deserialize(input: Array<Bucket>, style: Style): Record<string, 
 
         // look up StyleLayer objects from layer ids (since we don't
         // want to waste time serializing/copying them from the worker)
-        // @ts-expect-error - layers is a readonly property
         bucket.layers = layers;
         if (bucket.stateDependentLayerIds) {
-            (bucket as any).stateDependentLayers = bucket.stateDependentLayerIds.map((lId) => layers.filter((l) => l.id === lId)[0]);
+            bucket.stateDependentLayers = bucket.stateDependentLayerIds.map((lId) => layers.filter((l) => l.id === lId)[0]);
         }
         for (const layer of layers) {
             output[layer.fqid] = bucket;

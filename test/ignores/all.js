@@ -5,9 +5,6 @@ const todo = [
     // To be ported: https://mapbox.atlassian.net/browse/GLJS-892
     "query-tests/symbol/above-horizon",
 
-    // https://github.com/mapbox/mapbox-gl-js/issues/7207
-    "render-tests/fill-pattern/update-feature-state",
-
     // https://github.com/mapbox/mapbox-gl-js/issues/5649,
     "render-tests/map-mode/static",
 
@@ -104,7 +101,9 @@ const todo = [
     // line-width projected
     "render-tests/elevated-line-width/projected",
     // https://mapbox.atlassian.net/browse/MAPSNAT-2636
-    "render-tests/icon-text-fit/stretch-nine-part-content-interpolate-text-size"
+    "render-tests/icon-text-fit/stretch-nine-part-content-interpolate-text-size",
+    // https://mapbox.atlassian.net/browse/GLJS-1189
+    "render-tests/background-pattern/image-update/delayed/same-size-before-color-theme-change",
 ];
 
 const skip = [
@@ -161,8 +160,10 @@ const skip = [
     "render-tests/text-variable-anchor/pitched",
 
     // Flaky
+    // https://mapbox.atlassian.net/browse/GLJS-1226
     // https://github.com/mapbox/mapbox-gl-js/issues/11234
     "render-tests/video/projected",
+    "render-tests/video/default",
 
     // Non-deterministic
     "query-tests/terrain/draped/lines/slope-occlusion-box-query",
@@ -180,38 +181,15 @@ const skip = [
     // Extremely flaky: https://github.com/mapbox/mapbox-gl-js/issues/11726
     "query-tests/terrain/draped/lines/slope-occlusion",
 
-    // Broken due to chrome update https://mapbox.atlassian.net/browse/GLJS-303
-    "query-tests/terrain/circle/map-aligned/overzoomed",
-    "render-tests/debug/collision-overscaled-fractional-zoom",
-    "render-tests/globe/globe-transforms/north-pole",
-    "render-tests/icon-image/stretchable-content",
-    "render-tests/icon-opacity/default",
-    "render-tests/icon-opacity/function",
-    "render-tests/icon-opacity/icon-only",
-    "render-tests/icon-opacity/literal",
-    "render-tests/icon-opacity/text-and-icon",
-    "render-tests/icon-translate-anchor/map",
-    "render-tests/icon-translate-anchor/viewport",
-    "render-tests/icon-translate/default",
-    "render-tests/icon-translate/function",
-    "render-tests/icon-translate/literal",
-    "render-tests/icon-visibility/visible",
-    "render-tests/raster-resampling/function",
-    "render-tests/raster-resampling/literal",
-    "render-tests/regressions/mapbox-gl-js#7172",
-    "render-tests/runtime-styling/set-style-sprite",
-    "render-tests/symbol-placement/point",
-    "render-tests/symbol-spacing/point-close",
-    "render-tests/symbol-spacing/point-far",
-    "render-tests/symbol-visibility/visible",
-    "render-tests/terrain/wireframe",
-
     // Unimplemented in -js:
     // https://mapbox.atlassian.net/browse/MAPS3D-671
     "render-tests/lighting-3d-mode/shadow/fill-extrusion-flat-roof",
 
     // fill-extrusion-rounded-roof not implemented in -js
     "render-tests/lighting-3d-mode/fill-extrusion/rounded-flat-roof",
+
+    // https://mapbox.atlassian.net/browse/MAPS3D-1742
+    "render-tests/model-layer/landmark-conflation-multiple-model-layers",
 
     // alpha textures not supported in -js
     "render-tests/model-layer/model-opacity-cutout-texture",
@@ -274,7 +252,30 @@ const skip = [
     "render-tests/lines-elevated-line-joins-linear-elevation",
 
     // Support image updates with different size
-    "render-tests/background-pattern/image-update/delayed/different-size"
+    "render-tests/background-pattern/image-update/delayed/different-size",
+    "render-tests/background-pattern/image-update/delayed/different-size-before-color-theme-change",
+    "render-tests/background-pattern/image-update/delayed/different-size-with-color-theme",
+
+    // 3D intersections gl-js port
+    // https://mapbox.atlassian.net/browse/MAPS3D-1659
+    "render-tests/3d-intersections/elevated-circles",
+    "render-tests/3d-intersections/elevated-geojson-fill",
+    "render-tests/3d-intersections/elevated-geojson-line-trim-offset",
+    "render-tests/3d-intersections/elevated-geojson-line-wide",
+    "render-tests/3d-intersections/elevated-geojson-line",
+    "render-tests/3d-intersections/elevated-wireframe",
+    "render-tests/3d-intersections/guard-rail-color-feature-dependent",
+    "render-tests/3d-intersections/guard-rail-color",
+    "render-tests/3d-intersections/guard-rail-toggle",
+    "render-tests/3d-intersections/road-markups-clipping",
+    "render-tests/3d-intersections/tunnel-enterance-color",
+    "render-tests/3d-intersections/zLevel/sf-progress",
+    "render-tests/3d-intersections/zLevel/tokyo-nosplit-portals-same-id",
+    "render-tests/3d-intersections/zLevel/tokyo-simplified-line-progress",
+    "render-tests/3d-intersections/no-cross-beams",
+    "render-tests/3d-intersections/ortho-camera",
+    "render-tests/3d-intersections/road-extend-tilecover",
+    "render-tests/3d-intersections/max-zoom-mismatch",
 ];
 
 export default {todo, skip};

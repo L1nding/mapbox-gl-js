@@ -50,12 +50,12 @@ type BoxFace = {
 // corners are in world coordinates.
 export function getBoxBottomFace(corners: Array<vec3>, meterToMercator: number): [number, number, number, number] {
     const zUp =  [0, 0, 1];
-    const boxFaces: BoxFace[] = [{corners: [0, 1, 3, 2], dotProductWithUp : 0},
-        {corners: [1, 5, 2, 6], dotProductWithUp : 0},
-        {corners: [0, 4, 1, 5], dotProductWithUp : 0},
-        {corners: [2, 6, 3, 7], dotProductWithUp : 0},
-        {corners: [4, 7, 5, 6], dotProductWithUp : 0},
-        {corners: [0, 3, 4, 7], dotProductWithUp : 0}];
+    const boxFaces: BoxFace[] = [{corners: [0, 1, 3, 2], dotProductWithUp: 0},
+        {corners: [1, 5, 2, 6], dotProductWithUp: 0},
+        {corners: [0, 4, 1, 5], dotProductWithUp: 0},
+        {corners: [2, 6, 3, 7], dotProductWithUp: 0},
+        {corners: [4, 7, 5, 6], dotProductWithUp: 0},
+        {corners: [0, 3, 4, 7], dotProductWithUp: 0}];
     for (const face of boxFaces) {
         const p0 = corners[face.corners[0]];
         const p1 = corners[face.corners[1]];
@@ -97,7 +97,7 @@ export function rotationFor3Points(
     const to = p0p1;
     vec3.cross(to, p0p1, p0p2);
     vec3.normalize(to, to);
-    return quat.rotationTo(out, from, to);
+    return quat.rotationTo(out, from, to) as quat;
 }
 
 export function coordinateFrameAtEcef(ecef: vec3): mat4 {

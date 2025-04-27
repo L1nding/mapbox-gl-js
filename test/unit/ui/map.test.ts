@@ -1,3 +1,4 @@
+// eslint-disable-next-line @typescript-eslint/ban-ts-comment
 // @ts-nocheck
 import {describe, test, beforeEach, afterEach, expect, waitFor, vi, createMap, createStyleJSON} from '../../util/vitest';
 import {createStyle, createStyleSource} from './map/util';
@@ -12,6 +13,7 @@ import {ErrorEvent} from '../../../src/util/evented';
 import simulate, {constructTouch} from '../../util/simulate_interaction';
 import {fixedNum} from '../../util/fixed';
 import {makeFQID} from '../../../src/util/fqid';
+import {ImageId} from '../../../src/style-spec/expression/types/image_id';
 
 // Mock implementation of elevation
 const createElevation = (func, exaggeration) => {
@@ -83,7 +85,7 @@ describe('Map', () => {
         const container = window.document.createElement('div');
         Object.defineProperty(container, 'offsetWidth', {value: 512});
         Object.defineProperty(container, 'offsetHeight', {value: 512});
-        createMap({accessToken:'notAToken'});
+        createMap({accessToken: 'notAToken'});
     });
 
     describe('disables handlers', () => {
@@ -345,10 +347,10 @@ describe('Map', () => {
         });
 
         test('listen to window resize event', () => {
-            window.addEventListener = function(type) {
+            window.addEventListener = function (type) {
                 if (type === 'resize') {
                     //restore empty function not to mess with other tests
-                    window.addEventListener = function() {};
+                    window.addEventListener = function () {};
                 }
             };
 
@@ -1070,9 +1072,9 @@ describe('Map', () => {
     test('map fires `styleimagemissing` for missing icons', async () => {
         const map = createMap();
 
-        const id = "missing-image";
+        const id = ImageId.from('missing-image');
 
-        let called: any;
+        let called: string;
 
         await new Promise(resolve => {
             map.on("styleimagemissing", e => {
@@ -1082,7 +1084,7 @@ describe('Map', () => {
             });
             expect(map.hasImage(id)).toBeFalsy();
             map.style.imageManager.getImages([id], '', () => {
-                expect(called).toEqual(id);
+                expect(called).toEqual(id.name);
                 expect(map.hasImage(id)).toBeTruthy();
             });
         });
@@ -1297,6 +1299,16 @@ describe('Map', () => {
             expect(map.isPointOnSurface([100, 100])).toEqual(true);
             expect(map.isPointOnSurface([100, 85])).toEqual(false);
         });
+    });
+
+    test('#getGlyphsUrl/setGlyphsUrl', async () => {
+        const map = createMap();
+
+        await waitFor(map, 'style.load');
+        expect(map.getGlyphsUrl()).toEqual(undefined);
+
+        map.setGlyphsUrl('https://localhost/fonts/v1/{fontstack}/{range}.pbf');
+        expect(map.getGlyphsUrl()).toEqual('https://localhost/fonts/v1/{fontstack}/{range}.pbf');
     });
 });
 

@@ -27,7 +27,7 @@ let sharedCache: Promise<Cache> | null | undefined;
 function getCaches() {
     try {
         return caches;
-    } catch (e: any) {
+    } catch (e) {
         // <iframe sandbox> triggers exceptions when trying to access window.caches
         // Chrome: DOMException, Safari: SecurityError, Firefox: NS_ERROR_FAILURE
         // Seems more robust to catch all exceptions instead of trying to match only these.
@@ -51,9 +51,9 @@ let responseConstructorSupportsReadableStream;
 function prepareBody(response: Response, callback: (body?: Blob | ReadableStream | null) => void) {
     if (responseConstructorSupportsReadableStream === undefined) {
         try {
-            new Response(new ReadableStream()); // eslint-disable-line no-undef
+            new Response(new ReadableStream());
             responseConstructorSupportsReadableStream = true;
-        } catch (e: any) {
+        } catch (e) {
             // Edge
             responseConstructorSupportsReadableStream = false;
         }
@@ -160,8 +160,7 @@ function isFresh(response: Response) {
     if (!response) return false;
     const expires = new Date(response.headers.get('Expires') || 0);
     const cacheControl = parseCacheControl(response.headers.get('Cache-Control') || '');
-    // @ts-expect-error - TS2365 - Operator '>' cannot be applied to types 'Date' and 'number'.
-    return expires > Date.now() && !cacheControl['no-cache'];
+    return Number(expires) > Date.now() && !cacheControl['no-cache'];
 }
 
 // `Infinity` triggers a cache check after the first tile is loaded

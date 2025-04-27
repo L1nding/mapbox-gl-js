@@ -23,6 +23,12 @@ export type CanvasSourceSpecification = {
  * @property {Array<Array<number>>} coordinates Four geographical coordinates denoting where to place the corners of the canvas, specified in `[longitude, latitude]` pairs.
  * @property {boolean} [animate=true] Whether the canvas source is animated. If the canvas is static (pixels do not need to be re-read on every frame), `animate` should be set to `false` to improve performance.
  */
+export type CanvasSourceOptions = {
+    type: 'canvas';
+    canvas: string | HTMLCanvasElement;
+    coordinates: Array<[number, number]>;
+    animate?: boolean;
+};
 
 /**
  * A data source containing the contents of an HTML canvas. See {@link CanvasSourceOptions} for detailed documentation of options.
@@ -54,7 +60,6 @@ export type CanvasSourceSpecification = {
  * @see [Example: Add a canvas source](https://docs.mapbox.com/mapbox-gl-js/example/canvas-source/)
  */
 class CanvasSource extends ImageSource<'canvas'> {
-    override type: 'canvas';
     override options: CanvasSourceSpecification;
     animate: boolean;
     canvas: HTMLCanvasElement;
@@ -121,12 +126,12 @@ class CanvasSource extends ImageSource<'canvas'> {
             return;
         }
 
-        this.play = function() {
+        this.play = function () {
             this._playing = true;
             this.map.triggerRepaint();
         };
 
-        this.pause = function() {
+        this.pause = function () {
             if (this._playing) {
                 this.prepare();
                 this._playing = false;

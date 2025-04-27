@@ -4,7 +4,7 @@ import {getProjection} from './projection/index';
 import {tileAABB} from '../geo/projection/tile_transform';
 import Point from '@mapbox/point-geometry';
 import {wrap, clamp, pick, radToDeg, degToRad, getAABBPointSquareDist, furthestTileCorner, warnOnce, deepEqual} from '../util/util';
-import {number as interpolate} from '../style-spec/util/interpolate';
+import {easeIn, number as interpolate} from '../style-spec/util/interpolate';
 import EXTENT from '../style-spec/data/extent';
 import {vec4, mat4, mat2, vec3, quat} from 'gl-matrix';
 import {Frustum, FrustumCorners, Ray} from '../util/primitives';
@@ -58,27 +58,26 @@ type RootTile = {
     zoom: number;
 };
 
-const OrthographicPitchTranstionValue = 15;
-const lerp = (x: number, y: number, t: number) => { return (1 - t) * x + t * y; };
-const easeIn = (x: number) => {
-    return x * x * x * x * x;
-};
+export const OrthographicPitchTranstionValue = 15;
+
 const lerpMatrix = (out: mat4, a: mat4, b: mat4, value: number) => {
     for (let i = 0; i < 16; i++) {
-        out[i] = lerp(a[i], b[i], value);
+        out[i] = interpolate(a[i], b[i], value);
     }
 
     return out;
 };
 
-const enum QuadrantVisibility {
-    None = 0,
-    TopLeft = 1,
-    TopRight = 2,
-    BottomLeft = 4,
-    BottomRight = 8,
-    All = 15
-}
+const QuadrantVisibility = {
+    None: 0,
+    TopLeft: 1,
+    TopRight: 2,
+    BottomLeft: 4,
+    BottomRight: 8,
+    All: 15
+} as const;
+
+type QuadrantMask = typeof QuadrantVisibility[keyof typeof QuadrantVisibility];
 
 /**
  * A single transform, generally used for a single tile to be
@@ -219,6 +218,8 @@ class Transform {
 
     _orthographicProjectionAtLowPitch: boolean;
 
+    _allowWorldUnderZoom: boolean;
+
     constructor(minZoom?: number | null, maxZoom?: number | null, minPitch?: number | null, maxPitch?: number | null, renderWorldCopies?: boolean, projection?: ProjectionSpecification | null, bounds?: LngLatBounds | null) {
         this.tileSize = 512; // constant
 
@@ -262,10 +263,12 @@ class Transform {
         this._horizonShift = 0.1;
 
         this._orthographicProjectionAtLowPitch = false;
+
+        this._allowWorldUnderZoom = false;
     }
 
     clone(): Transform {
-        const clone = new Transform(this._minZoom, this._maxZoom, this._minPitch, this.maxPitch, this._renderWorldCopies, this.getProjection());
+        const clone = new Transform(this._minZoom, this._maxZoom, this._minPitch, this.maxPitch, this._renderWorldCopies, this.getProjection(), this.maxBounds);
         clone._elevation = this._elevation;
         clone._centerAltitude = this._centerAltitude;
         clone._centerAltitudeValidForExaggeration = this._centerAltitudeValidForExaggeration;
@@ -290,6 +293,7 @@ class Transform {
         clone._calcMatrices();
         clone.freezeTileCoverage = this.freezeTileCoverage;
         clone.frustumCorners = this.frustumCorners;
+        clone._allowWorldUnderZoom = this._allowWorldUnderZoom;
         return clone;
     }
 
@@ -485,6 +489,14 @@ class Transform {
         return this._fov / Math.PI * 180;
     }
 
+    set fov(fov: number) {
+        fov = Math.max(0.01, Math.min(60, fov));
+        if (this._fov === fov) return;
+        this._unmodified = false;
+        this._fov = degToRad(fov);
+        this._calcMatrices();
+    }
+
     get fovX(): number {
         return this._fov;
     }
@@ -492,14 +504,6 @@ class Transform {
     get fovY(): number {
         const focalLength = 1.0 / Math.tan(this.fovX * 0.5);
         return 2 * Math.atan((1.0 / this.aspect) / focalLength);
-    }
-
-    set fov(fov: number) {
-        fov = Math.max(0.01, Math.min(60, fov));
-        if (this._fov === fov) return;
-        this._unmodified = false;
-        this._fov = degToRad(fov);
-        this._calcMatrices();
     }
 
     get averageElevation(): number {
@@ -853,7 +857,7 @@ class Transform {
      * Extends tile coverage to include potential neighboring tiles using either light direction or quadrant visibility information.
      * @param {Array<OverscaledTileID>} coveringTiles tile cover that is extended
      * @param {number} maxZoom maximum zoom level
-     * @param {Vec3} lightDir direction of the light (unit vector), if undefined quadrant visibility information is used
+     * @param {vec3} lightDir direction of the light (unit vector), if undefined quadrant visibility information is used
      * @returns {Array<OverscaledTileID>} a set of extension tiles
      */
     extendTileCover(coveringTiles: Array<OverscaledTileID>, maxZoom: number, lightDir?: vec3): Array<OverscaledTileID> {
@@ -1115,7 +1119,7 @@ class Transform {
 
         // Do a depth-first traversal to find visible tiles and proper levels of detail
         const stack: RootTile[] = [];
-        let result = [];
+        let result: Array<{tileID: OverscaledTileID, distanceSq: number}> = [];
         const maxZoom = z;
         const overscaledZ = options.reparseOverscaled ? actualZ : z;
         const cameraHeight = (cameraAltitude - this._centerAltitude) * meterToTile; // in tile coordinates.
@@ -1316,8 +1320,7 @@ class Transform {
                     continue;
                 }
 
-                let visibility = QuadrantVisibility.None;
-                // Perform more precise intersection tests to cull the remaining < 1% false positives from the earlier test.
+                let visibility: QuadrantMask = QuadrantVisibility.None;
                 if (!fullyVisible) {
                     let intersectResult = verticalFrustumIntersect ? it.aabb.intersectsPrecise(cameraFrustum) : it.aabb.intersectsPreciseFlat(cameraFrustum);
 
@@ -1514,11 +1517,12 @@ class Transform {
      * This method is coupled with {@see pointLocation} in 3D mode to model map manipulation
      * using flat plane approach to keep constant elevation above ground.
      * @param {LngLat} lnglat location
+     * @param {number} altitude (optional) altitude above the map plane in meters.
      * @returns {Point} screen point
      * @private
      */
-    locationPoint(lnglat: LngLat): Point {
-        return this.projection.locationPoint(this, lnglat);
+    locationPoint(lnglat: LngLat, altitude?: number): Point {
+        return this.projection.locationPoint(this, lnglat, altitude);
     }
 
     /**
@@ -1526,11 +1530,12 @@ class Transform {
      * In 3D mode (when terrain is enabled) elevation is sampled for the point before
      * projecting it. In 2D mode, behaves the same locationPoint.
      * @param {LngLat} lnglat location
+     * @param {number} altitude (optional) altitude above the map plane in meters.
      * @returns {Point} screen point
      * @private
      */
     locationPoint3D(lnglat: LngLat, altitude?: number): Point {
-        return this.projection.locationPoint(this, lnglat, true, (altitude || 0));
+        return this.projection.locationPoint(this, lnglat, altitude, true);
     }
 
     /**
@@ -1548,17 +1553,19 @@ class Transform {
      * In 3D mode (map with terrain) returns location of terrain raycast point.
      * In 2D mode, behaves the same as {@see pointLocation}.
      * @param {Point} p screen point
+     * @param {number} altitude (optional) altitude above the map plane in meters.
      * @returns {LngLat} lnglat location
      * @private
      */
     pointLocation3D(p: Point, altitude?: number): LngLat {
-        return this.coordinateLocation(this.pointCoordinate3D(p, (altitude || 0)));
+        return this.coordinateLocation(this.pointCoordinate3D(p, altitude));
     }
 
     /**
      * Given a geographical lngLat, return an unrounded
      * coordinate that represents it at this transform's zoom level.
      * @param {LngLat} lngLat
+     * @param {number} altitude (optional) altitude above the map plane in meters.
      * @returns {Coordinate}
      * @private
      */
@@ -1672,14 +1679,15 @@ class Transform {
      * In 3D mode, raycast to terrain. In 2D mode, behaves the same as {@see pointCoordinate}.
      * For p above terrain, don't return point behind camera but clamp p.y at the top of terrain.
      * @param {Point} p top left origin screen point, in pixels.
+     * @param {number} altitude (optional) altitude above the map plane in meters.
      * @private
      */
     pointCoordinate3D(p: Point, altitude?: number): MercatorCoordinate {
-        if (!this.elevation) return this.pointCoordinate(p, (altitude || 0));
+        if (!this.elevation) return this.pointCoordinate(p, altitude);
         let raycast: vec3 | null | undefined = this.projection.pointCoordinate3D(this, p.x, p.y);
         if (raycast) return new MercatorCoordinate(raycast[0], raycast[1], raycast[2]);
         let start = 0, end = this.horizonLineFromTop();
-        if (p.y > end) return this.pointCoordinate(p, (altitude || 0)); // holes between tiles below horizon line or below bottom.
+        if (p.y > end) return this.pointCoordinate(p, altitude); // holes between tiles below horizon line or below bottom.
         const samples = 10;
         const threshold = 0.02 * end;
         const r = p.clone();
@@ -2003,7 +2011,7 @@ class Transform {
         expanded: boolean = false,
     ): mat4 {
         const projMatrixKey = unwrappedTileID.key;
-        let cache;
+        let cache: Record<number, mat4>;
         if (expanded) {
             cache = this._expandedProjMatrixCache;
         } else if (aligned) {
@@ -2184,10 +2192,10 @@ class Transform {
             }
         }
 
-        if (x2 !== x || y2 !== y) { // pan the map to fit the range
+        if ((x2 !== x || y2 !== y) && !this._allowWorldUnderZoom) { // pan the map to fit the range
             this.center = this.unproject(new Point(x2, y2));
         }
-        if (s) { // scale the map to fit the range
+        if (s && !this._allowWorldUnderZoom) { // scale the map to fit the range
             this.zoom += this.scaleZoom(s);
         }
 
@@ -2362,7 +2370,7 @@ class Transform {
             dx = x - Math.round(x) + angleCos * xShift + angleSin * yShift,
             dy = y - Math.round(y) + angleCos * yShift + angleSin * xShift;
         const alignedM = new Float64Array(m) as unknown as mat4;
-        mat4.translate(alignedM, alignedM, [ dx > 0.5 ? dx - 1 : dx, dy > 0.5 ? dy - 1 : dy, 0 ]);
+        mat4.translate(alignedM, alignedM, [dx > 0.5 ? dx - 1 : dx, dy > 0.5 ? dy - 1 : dy, 0]);
         this.alignedProjMatrix = alignedM;
 
         m = mat4.create();
@@ -2692,7 +2700,7 @@ class Transform {
         // to calculate correct perspective ratio values for symbols
         if (this.isOrthographic) {
             const mixValue = this.pitch >= OrthographicPitchTranstionValue ? 1.0 : this.pitch / OrthographicPitchTranstionValue;
-            distance = lerp(1.0, distance, easeIn(mixValue));
+            distance = interpolate(1.0, distance, easeIn(mixValue));
         }
         return distance;
     }

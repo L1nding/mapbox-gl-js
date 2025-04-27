@@ -2,13 +2,15 @@ import assert from 'assert';
 import {RGBAImage} from '../util/image';
 import {register} from '../util/web_worker_transfer';
 import potpack from 'potpack';
-import {ImageIdWithOptions} from '../style-spec/expression/types/image_id_with_options';
+import {ImageId} from '../style-spec/expression/types/image_id';
+import {ImageVariant} from '../style-spec/expression/types/image_variant';
 
-import type {StyleImage} from '../style/style_image';
+import type {StyleImage, StyleImageMap} from '../style/style_image';
 import type ImageManager from './image_manager';
 import type Texture from './texture';
 import type {SpritePosition} from '../util/image';
 import type {LUT} from "../util/lut";
+import type {StringifiedImageVariant} from '../style-spec/expression/types/image_variant';
 
 const ICON_PADDING: number = 1;
 const PATTERN_PADDING: number = 2;
@@ -26,6 +28,8 @@ type ImagePositionScale = {
     y: number;
 }
 
+export type ImagePositionMap = Map<StringifiedImageVariant, ImagePosition>;
+
 export class ImagePosition implements SpritePosition {
     paddedRect: Rect;
     pixelRatio: number;
@@ -37,11 +41,12 @@ export class ImagePosition implements SpritePosition {
     sdf: boolean;
     scale: ImagePositionScale;
 
-    static getImagePositionScale(imageIdWithOptions: ImageIdWithOptions | undefined, usvg: boolean, pixelRatio: number): ImagePositionScale {
-        if (usvg && imageIdWithOptions && imageIdWithOptions.options && imageIdWithOptions.options.transform) {
+    static getImagePositionScale(imageVariant: ImageVariant | undefined, usvg: boolean, pixelRatio: number): ImagePositionScale {
+        if (usvg && imageVariant && imageVariant.options && imageVariant.options.transform) {
+            const transform = imageVariant.options.transform;
             return {
-                x: imageIdWithOptions.options.transform.a,
-                y: imageIdWithOptions.options.transform.d
+                x: transform.a,
+                y: transform.d
             };
         } else {
             return {
@@ -51,16 +56,18 @@ export class ImagePosition implements SpritePosition {
         }
     }
 
-    constructor(paddedRect: Rect, {
-        pixelRatio,
-        version,
-        stretchX,
-        stretchY,
-        content,
-        sdf,
-        usvg,
-    }: StyleImage, padding: number, imageIdWithOptions?: ImageIdWithOptions) {
+    constructor(paddedRect: Rect, image: StyleImage, padding: number, imageVariant?: ImageVariant) {
         this.paddedRect = paddedRect;
+        const {
+            pixelRatio,
+            version,
+            stretchX,
+            stretchY,
+            content,
+            sdf,
+            usvg,
+        } = image;
+
         this.pixelRatio = pixelRatio;
         this.stretchX = stretchX;
         this.stretchY = stretchY;
@@ -68,7 +75,7 @@ export class ImagePosition implements SpritePosition {
         this.version = version;
         this.padding = padding;
         this.sdf = sdf;
-        this.scale = ImagePosition.getImagePositionScale(imageIdWithOptions, usvg, pixelRatio);
+        this.scale = ImagePosition.getImagePositionScale(imageVariant, usvg, pixelRatio);
     }
 
     get tl(): [number, number] {
@@ -93,24 +100,35 @@ export class ImagePosition implements SpritePosition {
     }
 }
 
+function getImageBin(image: StyleImage, padding: number, scale: [number, number] = [1, 1]) {
+    // If it's a vector image, we set it's size as the natural one scaled
+    const imageWidth = image.data ? image.data.width : image.width * scale[0];
+    const imageHeight = image.data ? image.data.height : image.height * scale[1];
+    return {
+        x: 0,
+        y: 0,
+        w: imageWidth + 2 * padding,
+        h: imageHeight + 2 * padding,
+    };
+}
+
+export function getImagePosition(id: StringifiedImageVariant, src: StyleImage, padding: number) {
+    const imageVariant = ImageVariant.parse(id);
+    const bin = getImageBin(src, padding, [imageVariant.options.transform.a, imageVariant.options.transform.d]);
+    return {bin, imagePosition: new ImagePosition(bin, src, padding, imageVariant), imageVariant};
+}
+
 export default class ImageAtlas {
     image: RGBAImage;
-    iconPositions: {
-        [_: string]: ImagePosition;
-    };
-    patternPositions: {
-        [_: string]: ImagePosition;
-    };
-    haveRenderCallbacks: Array<string>;
+    iconPositions: ImagePositionMap;
+    patternPositions: ImagePositionMap;
+    haveRenderCallbacks: ImageId[];
     uploaded: boolean | null | undefined;
     lut: LUT | null;
 
-    constructor(icons: {
-        [_: string]: StyleImage;
-    }, patterns: {
-        [_: string]: StyleImage;
-    }, lut: LUT | null) {
-        const iconPositions: Record<string, any> = {}, patternPositions: Record<string, any> = {};
+    constructor(icons: StyleImageMap<StringifiedImageVariant>, patterns: StyleImageMap<StringifiedImageVariant>, lut: LUT | null) {
+        const iconPositions: ImagePositionMap = new Map();
+        const patternPositions: ImagePositionMap = new Map();
         this.haveRenderCallbacks = [];
 
         const bins = [];
@@ -121,19 +139,18 @@ export default class ImageAtlas {
         const {w, h} = potpack(bins);
         const image = new RGBAImage({width: w || 1, height: h || 1});
 
-        for (const id in icons) {
-            const src = icons[id];
-            const bin = iconPositions[id].paddedRect;
+        for (const [id, src] of icons.entries()) {
+            const bin = iconPositions.get(id).paddedRect;
             // For SDF icons, we override the RGB channels with white.
             // This is because we read the red channel in the shader and RGB channels will get alpha-premultiplied on upload.
             const overrideRGB = src.sdf;
             RGBAImage.copy(src.data, image, {x: 0, y: 0}, {x: bin.x + ICON_PADDING, y: bin.y + ICON_PADDING}, src.data, lut, overrideRGB);
         }
 
-        for (const id in patterns) {
-            const src = patterns[id];
-            const bin = patternPositions[id].paddedRect;
-            let padding = patternPositions[id].padding;
+        for (const [id, src] of patterns.entries()) {
+            const patternPosition = patternPositions.get(id);
+            const bin = patternPosition.paddedRect;
+            let padding = patternPosition.padding;
             const x = bin.x + padding,
                 y = bin.y + padding,
                 w = src.data.width,
@@ -146,7 +163,7 @@ export default class ImageAtlas {
             // Add wrapped padding on each side of the image.
             // Leave one pixel transparent to avoid bleeding to neighbouring images
             RGBAImage.copy(src.data, image, {x: 0, y: h - padding}, {x, y: y - padding}, {width: w, height: padding}, lut); // T
-            RGBAImage.copy(src.data, image, {x: 0, y:     0}, {x, y: y + h}, {width: w, height: padding}, lut); // B
+            RGBAImage.copy(src.data, image, {x: 0, y: 0}, {x, y: y + h}, {width: w, height: padding}, lut); // B
             RGBAImage.copy(src.data, image, {x: w - padding, y: 0}, {x: x - padding, y}, {width: padding, height: h}, lut); // L
             RGBAImage.copy(src.data, image, {x: 0,     y: 0}, {x: x + w, y}, {width: padding, height: h}, lut); // R
             // Fill corners
@@ -162,26 +179,14 @@ export default class ImageAtlas {
         this.patternPositions = patternPositions;
     }
 
-    addImages(images: {
-        [_: string]: StyleImage;
-    }, positions: {
-        [_: string]: ImagePosition;
-    }, padding: number,
-    bins: Array<Rect>) {
-        for (const id in images) {
-            const src = images[id];
-            const bin = {
-                x: 0,
-                y: 0,
-                w: src.data.width + 2 * padding,
-                h: src.data.height + 2 * padding,
-            };
+    addImages(images: StyleImageMap<StringifiedImageVariant>, positions: ImagePositionMap, padding: number, bins: Array<Rect>) {
+        for (const [id, src] of images.entries()) {
+            const {bin, imagePosition, imageVariant} = getImagePosition(id, src, padding);
+            positions.set(id, imagePosition);
             bins.push(bin);
-            const imageIdWithOptions = ImageIdWithOptions.deserializeFromString(id);
-            positions[id] = new ImagePosition(bin, src, padding, imageIdWithOptions);
 
             if (src.hasRenderCallback) {
-                this.haveRenderCallbacks.push(imageIdWithOptions.id);
+                this.haveRenderCallbacks.push(imageVariant.id);
             }
         }
     }
@@ -190,16 +195,20 @@ export default class ImageAtlas {
         this.haveRenderCallbacks = this.haveRenderCallbacks.filter(id => imageManager.hasImage(id, scope));
         imageManager.dispatchRenderCallbacks(this.haveRenderCallbacks, scope);
 
-        for (const name in imageManager.getUpdatedImages(scope)) {
-            for (const id of Object.keys(this.iconPositions)) {
-                if (ImageIdWithOptions.deserializeId(id) === name) {
-                    this.patchUpdatedImage(this.iconPositions[id], imageManager.getImage(name, scope), texture);
+        for (const imageId of imageManager.getUpdatedImages(scope)) {
+            for (const id of this.iconPositions.keys()) {
+                const imageVariant = ImageVariant.parse(id);
+                if (ImageId.isEqual(imageVariant.id, imageId)) {
+                    const image = imageManager.getImage(imageId, scope);
+                    this.patchUpdatedImage(this.iconPositions.get(id), image, texture);
                 }
             }
 
-            for (const id of Object.keys(this.patternPositions)) {
-                if (ImageIdWithOptions.deserializeId(id) === name) {
-                    this.patchUpdatedImage(this.patternPositions[id], imageManager.getImage(name, scope), texture);
+            for (const id of this.patternPositions.keys()) {
+                const imageVariant = ImageVariant.parse(id);
+                if (ImageId.isEqual(imageVariant.id, imageId)) {
+                    const image = imageManager.getImage(imageId, scope);
+                    this.patchUpdatedImage(this.patternPositions.get(id), image, texture);
                 }
             }
         }

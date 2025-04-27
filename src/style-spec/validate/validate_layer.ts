@@ -32,9 +32,8 @@ export default function validateLayer(options: Options): Array<ValidationError> 
     if (layer.id) {
         const layerId = unbundle(layer.id);
         for (let i = 0; i < options.arrayIndex; i++) {
-            const otherLayer = style.layers[i];
+            const otherLayer = style.layers[i] as LayerSpecification & { id: { __line__: number } };
             if (unbundle(otherLayer.id) === layerId) {
-                // @ts-expect-error - TS2339 - Property '__line__' does not exist on type 'string'.
                 errors.push(new ValidationError(key, layer.id, `duplicate layer id "${layer.id}", previously used at line ${otherLayer.id.__line__}`));
             }
         }
@@ -80,8 +79,8 @@ export default function validateLayer(options: Options): Array<ValidationError> 
             } else if (sourceType === 'raster-array' && !['raster', 'raster-particle'].includes(type)) {
                 errors.push(new ValidationError(key, layer.source, `raster-array source can only be used with layer type \'raster\'.`));
             } else if (type === 'line' && layer.paint && (layer.paint['line-gradient'] || layer.paint['line-trim-offset']) &&
-                    (sourceType !== 'geojson' || !(source as GeoJSONSourceSpecification).lineMetrics)) {
-                errors.push(new ValidationError(key, layer, `layer "${layer.id}" specifies a line-gradient, which requires a GeoJSON source with \`lineMetrics\` enabled.`));
+                    (sourceType === 'geojson' && !(source as GeoJSONSourceSpecification).lineMetrics)) {
+                errors.push(new ValidationError(key, layer, `layer "${layer.id}" specifies a line-gradient, which requires the GeoJSON source to have \`lineMetrics\` enabled.`));
             } else if (type === 'raster-particle' && sourceType !== 'raster-array') {
                 errors.push(new ValidationError(key, layer.source, `layer "${layer.id}" requires a \'raster-array\' source.`));
             }
@@ -107,7 +106,6 @@ export default function validateLayer(options: Options): Array<ValidationError> 
                     valueSpec: styleSpec.layer.type,
                     style: options.style,
                     styleSpec: options.styleSpec,
-                    // @ts-expect-error - TS2353 - Object literal may only specify known properties, and 'object' does not exist in type 'ValidationOptions'.
                     object: layer,
                     objectKey: 'type'
                 });
@@ -117,7 +115,6 @@ export default function validateLayer(options: Options): Array<ValidationError> 
             },
             layout(options) {
                 return validateObject({
-                    // @ts-expect-error - TS2353 - Object literal may only specify known properties, and 'layer' does not exist in type 'Options'.
                     layer,
                     key: options.key,
                     value: options.value,
@@ -133,7 +130,6 @@ export default function validateLayer(options: Options): Array<ValidationError> 
             },
             paint(options) {
                 return validateObject({
-                    // @ts-expect-error - TS2353 - Object literal may only specify known properties, and 'layer' does not exist in type 'Options'.
                     layer,
                     key: options.key,
                     value: options.value,

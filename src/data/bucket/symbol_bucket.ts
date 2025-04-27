@@ -38,7 +38,7 @@ import {VectorTileFeature} from '@mapbox/vector-tile';
 const vectorTileFeatureTypes = VectorTileFeature.types;
 import {verticalizedCharacterMap} from '../../util/verticalize_punctuation';
 import {getSizeData} from '../../symbol/symbol_size';
-import {MAX_PACKED_SIZE} from '../../symbol/symbol_layout';
+import {getScaledImageVariant, MAX_PACKED_SIZE} from '../../symbol/symbol_layout';
 import {register} from '../../util/web_worker_transfer';
 import EvaluationParameters from '../../style/evaluation_parameters';
 import Formatted from '../../style-spec/expression/types/formatted';
@@ -52,6 +52,7 @@ import assert from 'assert';
 import {regionsEquals} from '../../../3d-style/source/replacement_source';
 import {clamp} from '../../util/util';
 
+import type {VectorTileLayer} from '@mapbox/vector-tile';
 import type Anchor from '../../symbol/anchor';
 import type {ReplacementSource} from '../../../3d-style/source/replacement_source';
 import type SymbolStyleLayer from '../../style/style_layer/symbol_style_layer';
@@ -71,14 +72,16 @@ import type Context from '../../gl/context';
 import type IndexBuffer from '../../gl/index_buffer';
 import type VertexBuffer from '../../gl/vertex_buffer';
 import type {SymbolQuad} from '../../symbol/quads';
-import type {SizeData} from '../../symbol/symbol_size';
+import type {SizeData, InterpolatedSize} from '../../symbol/symbol_size';
 import type {FeatureStates} from '../../source/source_state';
 import type {TileTransform} from '../../geo/projection/tile_transform';
 import type {TileFootprint} from '../../../3d-style/util/conflation';
 import type {LUT} from '../../util/lut';
 import type {SpritePositions} from '../../util/image';
-import type {VectorTileLayer} from '@mapbox/vector-tile';
 import type {TypedStyleLayer} from '../../style/style_layer/typed_style_layer';
+import type {ElevationType} from '../../../3d-style/elevation/elevation_constants';
+import type {ElevationFeature} from '../../../3d-style/elevation/elevation_feature';
+import type {ImageId} from '../../style-spec/expression/types/image_id';
 
 export type SingleCollisionBox = {
     x1: number;
@@ -448,6 +451,11 @@ class SymbolBucket implements Bucket {
     zOffsetSortDirty: boolean;
     zOffsetBuffersNeedUpload: boolean;
 
+    elevationType: ElevationType;
+    elevationFeatures: Array<ElevationFeature>;
+    elevationFeatureIdToIndex: Map<number, number>;
+    elevationStateComplete: boolean;
+
     activeReplacements: Array<any>;
     replacementUpdateTime: number;
 
@@ -501,7 +509,10 @@ class SymbolBucket implements Bucket {
         this.hasAnyZOffset = false;
         this.zOffsetSortDirty = false;
 
-        this.zOffsetBuffersNeedUpload = layout.get('symbol-z-elevate');
+        this.zOffsetBuffersNeedUpload = false;
+
+        this.elevationType = 'none';
+        this.elevationStateComplete = false;
 
         this.activeReplacements = [];
         this.replacementUpdateTime = 0;
@@ -520,9 +531,7 @@ class SymbolBucket implements Bucket {
         this.symbolInstances = new SymbolInstanceArray();
     }
 
-    calculateGlyphDependencies(text: string, stack: {
-        [_: number]: boolean;
-    }, textAlongLine: boolean, allowVerticalPlacement: boolean, doesAllowVerticalWritingMode: boolean) {
+    calculateGlyphDependencies(text: string, stack: Record<number, boolean>, textAlongLine: boolean, allowVerticalPlacement: boolean, doesAllowVerticalWritingMode: boolean) {
         for (const char of text) {
             const codePoint = char.codePointAt(0);
             if (codePoint === undefined) break;
@@ -679,15 +688,21 @@ class SymbolBucket implements Bucket {
             if (icon) {
                 const layer = this.layers[0];
                 const unevaluatedLayoutValues = layer._unevaluatedLayout._values;
-                const iconSizeFactor = symbolSize.getRasterizedIconSize(this.iconSizeData, unevaluatedLayoutValues['icon-size'], canonical, this.zoom, symbolFeature);
-                const scaleFactor = iconSizeFactor * iconScaleFactor * this.pixelRatio;
-                const iconPrimary = icon.getPrimary().scaleSelf(scaleFactor);
-                icons[iconPrimary.id] = (icons[iconPrimary.id] || []);
-                icons[iconPrimary.id].push(iconPrimary);
-                if (icon.nameSecondary) {
-                    const iconSecondary = icon.getSecondary().scaleSelf(scaleFactor);
-                    icons[iconSecondary.id] = (icons[iconSecondary.id] || []);
-                    icons[iconSecondary.id].push(iconSecondary);
+                const {iconPrimary, iconSecondary} = getScaledImageVariant(icon, this.iconSizeData, unevaluatedLayoutValues['icon-size'], canonical, this.zoom, symbolFeature, this.pixelRatio, iconScaleFactor);
+                const iconPrimaryId = iconPrimary.id.toString();
+                if (icons.has(iconPrimaryId)) {
+                    icons.get(iconPrimaryId).push(iconPrimary);
+                } else {
+                    icons.set(iconPrimaryId, [iconPrimary]);
+                }
+
+                if (iconSecondary) {
+                    const iconSecondaryId = iconSecondary.id.toString();
+                    if (icons.has(iconSecondaryId)) {
+                        icons.get(iconSecondaryId).push(iconSecondary);
+                    } else {
+                        icons.set(iconSecondaryId, [iconSecondary]);
+                    }
                 }
             }
 
@@ -699,12 +714,14 @@ class SymbolBucket implements Bucket {
                     if (!section.image) {
                         const doesAllowVerticalWritingMode = allowsVerticalWritingMode(text.toString());
                         const sectionFont = section.fontStack || fontStack;
-                        const sectionStack = stacks[sectionFont] = stacks[sectionFont] || {};
+                        const sectionStack: Record<number, boolean> = stacks[sectionFont] = stacks[sectionFont] || {};
                         this.calculateGlyphDependencies(section.text, sectionStack, textAlongLine, this.allowVerticalPlacement, doesAllowVerticalWritingMode);
                     } else {
                         const imagePrimary = section.image.getPrimary().scaleSelf(this.pixelRatio);
-                        icons[imagePrimary.id] = (icons[imagePrimary.id] || []);
-                        icons[imagePrimary.id].push(imagePrimary);
+                        const imagePrimaryId = imagePrimary.id.toString();
+                        const primaryIcons = icons.get(imagePrimaryId) || [];
+                        primaryIcons.push(imagePrimary);
+                        icons.set(imagePrimaryId, primaryIcons);
                     }
                 }
             }
@@ -716,6 +733,25 @@ class SymbolBucket implements Bucket {
             this.features = mergeLines(this.features);
         }
 
+        if (layout.get('symbol-elevation-reference') === 'hd-road-markup') {
+            this.elevationType = 'road';
+            if (options.elevationFeatures) {
+                if (!this.elevationFeatures && options.elevationFeatures.length > 0) {
+                    this.elevationFeatures = [];
+                    this.elevationFeatureIdToIndex = new Map<number, number>();
+                }
+                for (const elevationFeature of options.elevationFeatures) {
+                    this.elevationFeatureIdToIndex.set(elevationFeature.id, this.elevationFeatures.length);
+                    this.elevationFeatures.push(elevationFeature);
+                }
+            }
+        } else if (layout.get('symbol-z-elevate')) {
+            this.elevationType = 'offset';
+        }
+        if (this.elevationType !== 'none') {
+            this.zOffsetBuffersNeedUpload = true;
+        }
+
         if (this.sortFeaturesByKey) {
             this.features.sort((a, b) => {
                 // a.sortKey is always a number when sortFeaturesByKey is true
@@ -724,9 +760,45 @@ class SymbolBucket implements Bucket {
         }
     }
 
-    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: Array<string>, imagePositions: SpritePositions, layers: Array<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null) {
+    update(states: FeatureStates, vtLayer: VectorTileLayer, availableImages: ImageId[], imagePositions: SpritePositions, layers: Array<TypedStyleLayer>, isBrightnessChanged: boolean, brightness?: number | null) {
         this.text.programConfigurations.updatePaintArrays(states, vtLayer, layers, availableImages, imagePositions, isBrightnessChanged, brightness);
         this.icon.programConfigurations.updatePaintArrays(states, vtLayer, layers, availableImages, imagePositions, isBrightnessChanged, brightness);
+    }
+
+    updateRoadElevation() {
+        if (this.elevationType !== 'road' || !this.elevationFeatures) {
+            return;
+        }
+
+        if (this.elevationStateComplete) {
+            // Road elevation is updated only once
+            return;
+        }
+
+        this.elevationStateComplete = true;
+        this.hasAnyZOffset = false;
+        let dataChanged = false;
+
+        for (let s = 0; s < this.symbolInstances.length; s++) {
+            const symbolInstance = this.symbolInstances.get(s);
+            if (symbolInstance.elevationFeatureIndex === 0xffff) {
+                continue;
+            }
+            const elevationFeature = this.elevationFeatures[symbolInstance.elevationFeatureIndex];
+            if (elevationFeature) {
+                // Add 5cm offset to reduce z-fighting issues
+                const newZOffset = 0.05 + elevationFeature.pointElevation(new Point(symbolInstance.tileAnchorX, symbolInstance.tileAnchorY));
+                if (symbolInstance.zOffset !== newZOffset) {
+                    dataChanged = true;
+                    symbolInstance.zOffset = newZOffset;
+                }
+            }
+        }
+
+        if (dataChanged) {
+            this.zOffsetBuffersNeedUpload = true;
+            this.zOffsetSortDirty = true;
+        }
     }
 
     updateZOffset() {
@@ -849,11 +921,11 @@ class SymbolBucket implements Bucket {
 
     addSymbols(arrays: SymbolBuffers,
                quads: Array<SymbolQuad>,
-               sizeVertex: any,
+               sizeVertex: number[],
                lineOffset: [number, number],
                alongLine: boolean,
                feature: SymbolFeature,
-               writingMode: any,
+               writingMode: number | undefined,
                globe: {
                    anchor: Anchor;
                    up: vec3;
@@ -862,7 +934,7 @@ class SymbolBucket implements Bucket {
                lineStartIndex: number,
                lineLength: number,
                associatedIconIndex: number,
-               availableImages: Array<string>,
+               availableImages: ImageId[],
                canonical: CanonicalTileID,
                brightness: number | null | undefined,
                hasAnySecondaryIcon: boolean) {
@@ -928,7 +1000,7 @@ class SymbolBucket implements Bucket {
 
         arrays.placedSymbolArray.emplaceBack(projectedAnchor.x, projectedAnchor.y, projectedAnchor.z, tileAnchor.x, tileAnchor.y,
             glyphOffsetArrayStart, this.glyphOffsetArray.length - glyphOffsetArrayStart, vertexStartIndex,
-            lineStartIndex, lineLength, (tileAnchor.segment as any),
+            lineStartIndex, lineLength, tileAnchor.segment,
             sizeVertex ? sizeVertex[0] : 0, sizeVertex ? sizeVertex[1] : 0,
             lineOffset[0], lineOffset[1],
             writingMode,
@@ -976,7 +1048,7 @@ class SymbolBucket implements Bucket {
 
         segment.vertexLength += 4;
 
-        const indexArray: LineIndexArray = (arrays.indexArray as any);
+        const indexArray = arrays.indexArray as LineIndexArray;
         indexArray.emplaceBack(index, index + 1);
         indexArray.emplaceBack(index + 1, index + 2);
         indexArray.emplaceBack(index + 2, index + 3);
@@ -985,18 +1057,18 @@ class SymbolBucket implements Bucket {
         segment.primitiveLength += 4;
     }
 
-    _addTextDebugCollisionBoxes(size: any, zoom: number, collisionBoxArray: CollisionBoxArray, startIndex: number, endIndex: number, instance: SymbolInstance) {
+    _addTextDebugCollisionBoxes(size: InterpolatedSize, zoom: number, collisionBoxArray: CollisionBoxArray, startIndex: number, endIndex: number, instance: SymbolInstance) {
         for (let b = startIndex; b < endIndex; b++) {
-            const box: CollisionBox = (collisionBoxArray.get(b) as any);
+            const box: CollisionBox = collisionBoxArray.get(b);
             const scale = this.getSymbolInstanceTextSize(size, instance, zoom, b);
 
             this._addCollisionDebugVertices(box, scale, this.textCollisionBox, box.projectedAnchorX, box.projectedAnchorY, box.projectedAnchorZ, instance);
         }
     }
 
-    _addIconDebugCollisionBoxes(size: any, zoom: number, collisionBoxArray: CollisionBoxArray, startIndex: number, endIndex: number, instance: SymbolInstance) {
+    _addIconDebugCollisionBoxes(size: InterpolatedSize, zoom: number, collisionBoxArray: CollisionBoxArray, startIndex: number, endIndex: number, instance: SymbolInstance) {
         for (let b = startIndex; b < endIndex; b++) {
-            const box: CollisionBox = (collisionBoxArray.get(b) as any);
+            const box: CollisionBox = collisionBoxArray.get(b);
             const scale = this.getSymbolInstanceIconSize(size, zoom, instance.placedIconSymbolIndex);
 
             this._addCollisionDebugVertices(box, scale, this.iconCollisionBox, box.projectedAnchorX, box.projectedAnchorY, box.projectedAnchorZ, instance);
@@ -1023,7 +1095,7 @@ class SymbolBucket implements Bucket {
         }
     }
 
-    getSymbolInstanceTextSize(textSize: any, instance: SymbolInstance, zoom: number, boxIndex: number): number {
+    getSymbolInstanceTextSize(textSize: InterpolatedSize, instance: SymbolInstance, zoom: number, boxIndex: number): number {
         const symbolIndex = instance.rightJustifiedTextSymbolIndex >= 0 ?
             instance.rightJustifiedTextSymbolIndex : instance.centerJustifiedTextSymbolIndex >= 0 ?
                 instance.centerJustifiedTextSymbolIndex : instance.leftJustifiedTextSymbolIndex >= 0 ?
@@ -1036,7 +1108,7 @@ class SymbolBucket implements Bucket {
         return this.tilePixelRatio * featureSize;
     }
 
-    getSymbolInstanceIconSize(iconSize: any, zoom: number, iconIndex: number): number {
+    getSymbolInstanceIconSize(iconSize: InterpolatedSize, zoom: number, iconIndex: number): number {
         const symbol = this.icon.placedSymbolArray.get(iconIndex);
         const featureSize = symbolSize.evaluateSizeForFeature(this.iconSizeData, iconSize, symbol);
 
@@ -1050,16 +1122,16 @@ class SymbolBucket implements Bucket {
         array.emplaceBack(scale, -padding,  padding, zOffset);
     }
 
-    _updateTextDebugCollisionBoxes(size: any, zoom: number, collisionBoxArray: CollisionBoxArray, startIndex: number, endIndex: number, instance: SymbolInstance, scaleFactor: number) {
+    _updateTextDebugCollisionBoxes(size: InterpolatedSize, zoom: number, collisionBoxArray: CollisionBoxArray, startIndex: number, endIndex: number, instance: SymbolInstance, scaleFactor: number) {
         for (let b = startIndex; b < endIndex; b++) {
-            const box: CollisionBox = (collisionBoxArray.get(b) as any);
+            const box: CollisionBox = collisionBoxArray.get(b);
             const scale = this.getSymbolInstanceTextSize(size, instance, zoom, b);
             const array = this.textCollisionBox.collisionVertexArrayExt;
             this._commitDebugCollisionVertexUpdate(array, scale, box.padding, instance.zOffset);
         }
     }
 
-    _updateIconDebugCollisionBoxes(size: any, zoom: number, collisionBoxArray: CollisionBoxArray, startIndex: number, endIndex: number, instance: SymbolInstance, iconScaleFactor: number) {
+    _updateIconDebugCollisionBoxes(size: InterpolatedSize, zoom: number, collisionBoxArray: CollisionBoxArray, startIndex: number, endIndex: number, instance: SymbolInstance, iconScaleFactor: number) {
         for (let b = startIndex; b < endIndex; b++) {
             const box = (collisionBoxArray.get(b));
             const scale = this.getSymbolInstanceIconSize(size, zoom, instance.placedIconSymbolIndex);
@@ -1194,7 +1266,7 @@ class SymbolBucket implements Bucket {
         const cos = Math.cos(angle);
         const rotatedYs = [];
         const featureIndexes = [];
-        const result = [];
+        const result: number[] = [];
 
         for (let i = 0; i < this.symbolInstances.length; ++i) {
             result.push(i);

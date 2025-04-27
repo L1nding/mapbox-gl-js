@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import deref from '../deref';
 
@@ -7,7 +8,7 @@ function eachLayer(style, callback) {
     }
 }
 
-export default function(style) {
+export default function (style) {
     style.version = 9;
 
     // remove user-specified refs

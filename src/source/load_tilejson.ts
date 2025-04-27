@@ -60,14 +60,17 @@ function getInlinedTileJSON(data?: TileJSON, language?: string, worldview?: stri
     return null;
 }
 
-export default function(
+/**
+ * @private
+ */
+export default function (
     options: Options,
     requestManager: RequestManager,
     language: string | null | undefined,
     worldview: string | null | undefined,
     callback: Callback<TileJSON>,
 ): Cancelable {
-    const loaded = function(err?: Error | null, tileJSON?: Partial<TileJSON>) {
+    const loaded = function (err?: Error | null, tileJSON?: Partial<TileJSON>) {
         if (err) {
             return callback(err);
         } else if (tileJSON) {

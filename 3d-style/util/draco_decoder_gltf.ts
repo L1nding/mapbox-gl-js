@@ -1,5 +1,5 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
-/* eslint-disable new-cap */
 
 // Emscripten-based JavaScript wrapper for Google Draco WASM decoder, manually optimized for much smaller size
 export function DracoDecoderModule(wasmPromise) {

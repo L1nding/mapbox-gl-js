@@ -745,6 +745,7 @@ function prepareBatched(painter: Painter, source: SourceCache, layer: ModelStyle
         const tile = source.getTile(coord);
         const bucket = tile.getBucket(layer) as Tiled3dModelBucket | null | undefined;
         if (!bucket) continue;
+        bucket.setFilter(layer.filter);
         // Conflation
         if (painter.conflationActive) bucket.updateReplacement(coord, painter.replacementSource);
         // evaluate scale
@@ -794,7 +795,7 @@ function drawBatchedModels(painter: Painter, source: SourceCache, layer: ModelSt
     const cutoffParams = getCutoffParams(painter, layer.paint.get('model-cutoff-fade-range'));
 
     const stats = layer.getLayerRenderingStats();
-    const drawTiles = function() {
+    const drawTiles = function () {
         let start, end, step;
         // When front cutoff is enabled the tiles are iterated in back to front order
         if (frontCutoffEnabled) {
@@ -832,6 +833,7 @@ function drawBatchedModels(painter: Painter, source: SourceCache, layer: ModelSt
             }
 
             const sortedNodes: Array<SortedNode> = [];
+            bucket.setFilter(layer.filter);
             for (const nodeInfo of bucket.getNodesInfo()) {
                 if (nodeInfo.hiddenByReplacement) continue;
                 if (!nodeInfo.node.meshes) continue;

@@ -5,6 +5,7 @@ import type SourceCache from './source_cache';
 import type StyleLayer from '../style/style_layer';
 import type CollisionIndex from '../symbol/collision_index';
 import type Transform from '../geo/transform';
+import type {ImageId} from '../style-spec/expression/types/image_id';
 import type {default as Feature, TargetDescriptor, FeatureVariant} from '../util/vectortile_to_geojson';
 import type {FeatureFilter} from '../style-spec/feature_filter/index';
 import type {RetainedQueryData} from '../symbol/placement';
@@ -63,10 +64,16 @@ function generateTargetKey(target: TargetDescriptor): string {
     }
 }
 
+/**
+ * @private
+ */
 export function getFeatureTargetKey(variant: FeatureVariant, feature: Feature, targetId: string = ''): string {
     return `${targetId}:${feature.id || ''}:${feature.layer.id}:${generateTargetKey(variant.target)}`;
 }
 
+/**
+ * @private
+ */
 export function shouldSkipFeatureVariant(variant: FeatureVariant, feature: Feature, uniqueFeatureSet: Set<string>, targetId: string = ''): boolean {
     if (variant.uniqueFeatureID) {
         const key = getFeatureTargetKey(variant, feature, targetId);
@@ -80,10 +87,13 @@ export function shouldSkipFeatureVariant(variant: FeatureVariant, feature: Featu
     return false;
 }
 
+/**
+ * @private
+ */
 export function queryRenderedFeatures(
     queryGeometry: QueryGeometry,
     query: QrfQuery & {has3DLayers?: boolean},
-    availableImages: Array<string>,
+    availableImages: ImageId[],
     transform: Transform,
     visualizeQueryGeometry: boolean = false,
 ): QueryResult {
@@ -114,10 +124,13 @@ export function queryRenderedFeatures(
     return mergeRenderedFeatureLayers(renderedFeatureLayers);
 }
 
+/**
+ * @private
+ */
 export function queryRenderedSymbols(
     queryGeometry: Array<Point>,
     query: QrfQuery,
-    availableImages: Array<string>,
+    availableImages: ImageId[],
     collisionIndex: CollisionIndex,
     retainedQueryData: Record<number, RetainedQueryData>,
 ): QueryResult {
@@ -170,6 +183,9 @@ export function queryRenderedSymbols(
     return result;
 }
 
+/**
+ * @private
+ */
 export function querySourceFeatures(sourceCache: SourceCache, params?: {
     sourceLayer?: string;
     filter?: FilterSpecification;

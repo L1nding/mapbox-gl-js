@@ -9,6 +9,7 @@ import {
 } from './program/line_program';
 import browser from '../util/browser';
 import {clamp, nextPowerOfTwo, warnOnce} from '../util/util';
+import {calculateGroundShadowFactor} from '../../3d-style/render/shadow_renderer';
 import {renderColorRamp} from '../util/color_ramp';
 import EXTENT from '../style-spec/data/extent';
 import ResolvedImage from '../style-spec/expression/types/resolved_image';
@@ -38,7 +39,7 @@ export function prepare(layer: LineStyleLayer, sourceCache: SourceCache, painter
             const tile = sourceCache.getTile(coord);
             const bucket: LineBucket | undefined = tile.getBucket(layer) as LineBucket;
             if (!bucket) continue;
-            if (bucket.hasZOffset) {
+            if (bucket.elevationType !== 'none') {
                 layer.hasElevatedBuckets = true;
             } else {
                 layer.hasNonElevatedBuckets = true;
@@ -63,6 +64,7 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
     const elevationReference = layer.layout.get('line-elevation-reference');
     const unitInMeters = layer.layout.get('line-width-unit') === 'meters';
     const elevationFromSea = elevationReference === 'sea';
+    const terrainEnabled = !!(painter.terrain && painter.terrain.enabled);
 
     const context = painter.context;
     const gl = context.gl;
@@ -85,7 +87,7 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
 
     const constantDash = dasharrayProperty.constantOr(null);
 
-    const constantCap = capProperty.constantOr((null as any));
+    const constantCap = capProperty.constantOr(null);
     const patternProperty = layer.paint.get('line-pattern');
 
     const image = patternProperty.constantOr((1 as any));
@@ -123,30 +125,48 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
         definesValues.push("VARIABLE_LINE_WIDTH");
     }
 
-    const renderTiles = (coords: OverscaledTileID[], defines: DynamicDefinesType[], depthMode: DepthMode, stencilMode3D: StencilMode, elevated: boolean) => {
+    const renderTiles = (coords: OverscaledTileID[], baseDefines: DynamicDefinesType[], depthMode: DepthMode, stencilMode3D: StencilMode, elevated: boolean, firstPass: boolean) => {
         for (const coord of coords) {
             const tile = sourceCache.getTile(coord);
             if (image && !tile.patternsLoaded()) continue;
 
             const bucket: LineBucket | null | undefined = (tile.getBucket(layer) as any);
             if (!bucket) continue;
-            if ((bucket.hasZOffset && !elevated) || (!bucket.hasZOffset && elevated)) continue;
+            if ((bucket.elevationType !== 'none' && !elevated) || (bucket.elevationType === 'none' && elevated)) continue;
 
             painter.prepareDrawTile();
+
+            const defines = [...baseDefines];
+            const renderElevatedRoads = bucket.elevationType === 'road';
+            const shadowRenderer = painter.shadowRenderer;
+            const renderWithShadows = renderElevatedRoads && !!shadowRenderer && shadowRenderer.enabled;
+            let groundShadowFactor: [number, number, number] = [0, 0, 0];
+            if (renderWithShadows) {
+                const directionalLight = painter.style.directionalLight;
+                const ambientLight = painter.style.ambientLight;
+                if (directionalLight && ambientLight) {
+                    groundShadowFactor = calculateGroundShadowFactor(painter.style, directionalLight, ambientLight);
+                }
+                defines.push('RENDER_SHADOWS', 'DEPTH_TEXTURE', 'NORMAL_OFFSET');
+            }
 
             const programConfiguration = bucket.programConfigurations.get(layer.id);
             const affectedByFog = painter.isTileAffectedByFog(coord);
             const program = painter.getOrCreateProgram(programId, {config: programConfiguration, defines, overrideFog: affectedByFog, overrideRtt: elevated ? false : undefined});
 
             if (constantPattern && tile.imageAtlas) {
-                const patternImage = ResolvedImage.from(constantPattern).getPrimary().scaleSelf(pixelRatio).serialize();
-                const posTo = tile.imageAtlas.patternPositions[patternImage];
+                const patternImage = ResolvedImage.from(constantPattern).getPrimary().scaleSelf(pixelRatio).toString();
+                const posTo = tile.imageAtlas.patternPositions.get(patternImage);
                 if (posTo) programConfiguration.setConstantPatternPositions(posTo);
             }
 
             if (!image && constantDash && constantCap && tile.lineAtlas) {
                 const posTo = tile.lineAtlas.getDash(constantDash, constantCap);
                 if (posTo) programConfiguration.setConstantPatternPositions(posTo);
+            }
+
+            if (renderWithShadows) {
+                shadowRenderer.setupShadows(tile.tileID.toUnwrapped(), program, 'vector-tile', tile.tileID.overscaledZ);
             }
 
             let [trimStart, trimEnd] = layer.paint.get('line-trim-offset');
@@ -172,8 +192,8 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
             const lineWidthScale = unitInMeters ? (1.0 / bucket.tileToMeter) / pixelsToTileUnits(tile, 1, painter.transform.zoom) : 1.0;
             const lineFloorWidthScale = unitInMeters ? (1.0 / bucket.tileToMeter) / pixelsToTileUnits(tile, 1, Math.floor(painter.transform.zoom)) : 1.0;
             const uniformValues = image ?
-                linePatternUniformValues(painter, tile, layer, matrix, pixelRatio, lineWidthScale, lineFloorWidthScale, [trimStart, trimEnd]) :
-                lineUniformValues(painter, tile, layer, matrix, bucket.lineClipsArray.length, pixelRatio, lineWidthScale, lineFloorWidthScale, [trimStart, trimEnd]);
+                linePatternUniformValues(painter, tile, layer, matrix, pixelRatio, lineWidthScale, lineFloorWidthScale, [trimStart, trimEnd], groundShadowFactor) :
+                lineUniformValues(painter, tile, layer, matrix, bucket.lineClipsArray.length, pixelRatio, lineWidthScale, lineFloorWidthScale, [trimStart, trimEnd], groundShadowFactor);
 
             if (gradient) {
                 const layerGradient = bucket.gradients[layer.id];
@@ -267,13 +287,20 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
                 uniformValues['u_alpha_discard_threshold'] = 0.0;
                 renderLine(new StencilMode(stencilFunc, stencilId, 0xFF, gl.KEEP, gl.KEEP, gl.KEEP));
             } else {
-                if (useStencilMaskRenderPass && elevated) {
-                    uniformValues['u_alpha_discard_threshold'] = 0.001; // to avoid stenciling pattern quads, only the content.
+                // Same logic as in the non-elevated case,
+                // but we need to draw all tiles in batches to support 3D stencil mode.
+                if (useStencilMaskRenderPass && elevated && firstPass) {
+                    uniformValues['u_alpha_discard_threshold'] = 0.8;
+                } else {
+                    uniformValues['u_alpha_discard_threshold'] = 0.0;
                 }
                 renderLine(elevated ? stencilMode3D : painter.stencilModeForClipping(coord));
             }
         }
     };
+
+    let depthMode = painter.depthModeForSublayer(0, DepthMode.ReadOnly);
+    const depthModeFor3D = new DepthMode(painter.depthOcclusion ? gl.GREATER : gl.LEQUAL, DepthMode.ReadOnly, painter.depthRangeFor3D);
 
     if (layer.hasNonElevatedBuckets) {
         const terrainEnabledImmediateMode = !isDraping && painter.terrain;
@@ -281,9 +308,8 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
             warnOnce(`Occlusion opacity for layer ${layer.id} is supported on terrain only if the layer has line-z-offset enabled.`);
         } else {
             if (!terrainEnabledImmediateMode) {
-                const depthMode = painter.depthModeForSublayer(0, DepthMode.ReadOnly);
                 const stencilMode3D = StencilMode.disabled;
-                renderTiles(coords, definesValues, depthMode, stencilMode3D, false);
+                renderTiles(coords, definesValues, depthMode, stencilMode3D, false, true);
             } else {
                 // Skip rendering of non-elevated lines in immediate mode when terrain is enabled.
                 // This happens only when the line layer has both elevated and non-elevated buckets
@@ -294,19 +320,29 @@ export default function drawLine(painter: Painter, sourceCache: SourceCache, lay
     }
 
     if (layer.hasElevatedBuckets) {
-        definesValues.push("ELEVATED");
-        if (hasCrossSlope) {
-            definesValues.push(crossSlopeHorizontal ? "CROSS_SLOPE_HORIZONTAL" : "CROSS_SLOPE_VERTICAL");
-        }
-        if (elevationFromSea) {
-            definesValues.push('ELEVATION_REFERENCE_SEA');
+        if (elevationReference === 'hd-road-markup') {
+            if (!terrainEnabled) {
+                depthMode = depthModeFor3D;
+                definesValues.push('ELEVATED_ROADS');
+            }
+        } else {
+            definesValues.push("ELEVATED");
+            depthMode = depthModeFor3D;
+            if (hasCrossSlope) {
+                definesValues.push(crossSlopeHorizontal ? "CROSS_SLOPE_HORIZONTAL" : "CROSS_SLOPE_VERTICAL");
+            }
+            if (elevationFromSea) {
+                definesValues.push('ELEVATION_REFERENCE_SEA');
+            }
         }
 
         // No need for tile clipping, a single pass only even for transparent lines.
         const stencilMode3D = useStencilMaskRenderPass ? painter.stencilModeFor3D() : StencilMode.disabled;
-        const depthMode = new DepthMode(painter.depthOcclusion ? gl.GREATER : gl.LEQUAL, DepthMode.ReadOnly, painter.depthRangeFor3D);
         painter.forceTerrainMode = true;
-        renderTiles(coords, definesValues, depthMode, stencilMode3D, true);
+        renderTiles(coords, definesValues, depthMode, stencilMode3D, true, true);
+        if (useStencilMaskRenderPass) {
+            renderTiles(coords, definesValues, depthMode, stencilMode3D, true, false);
+        }
         // It is important that this precedes resetStencilClippingMasks as in gl-js we don't clear stencil for terrain.
         painter.forceTerrainMode = false;
     }

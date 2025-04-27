@@ -17,7 +17,7 @@ import type {TileTransform} from '../geo/projection/tile_transform';
  * @returns value in tile units
  * @private
  */
-export default function(
+export default function (
     tile: {
         tileID: OverscaledTileID;
         tileSize: number;
@@ -28,6 +28,9 @@ export default function(
     return pixelValue * (EXTENT / (tile.tileSize * Math.pow(2, z - tile.tileID.overscaledZ)));
 }
 
+/**
+ * @private
+ */
 export function getPixelsToTileUnitsMatrix(
     tile: {
         tileID: OverscaledTileID;

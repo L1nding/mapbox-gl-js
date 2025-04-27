@@ -60,11 +60,13 @@ export const operationHandlers = {
         }, doneCb);
     },
     sleep(map, params, doneCb) {
+
         setTimeout(doneCb, params[0]);
     },
     addImage(map, params, doneCb) {
+        params[1] = params[1].replace('./', '/test/integration/');
         if (params[1].endsWith('.js')) {
-            import(params[1].replace('./', '../')).then(({image}) => {
+            import(params[1]).then(({image}) => {
                 map.addImage(params[0], image, params[2] || {});
                 doneCb();
             });
@@ -77,7 +79,7 @@ export const operationHandlers = {
             doneCb();
         };
 
-        image.src = params[1].replace('./', '');
+        image.src = params[1];
         image.onerror = () => {
             throw new Error(`addImage opertation failed with src ${image.src}`);
         };
@@ -138,7 +140,7 @@ export const operationHandlers = {
         waitForRender(map, () => true, doneCb);
     },
     updateFakeCanvas(map, params, doneCb) {
-        const updateFakeCanvas = async function() {
+        const updateFakeCanvas = async function () {
             const canvasSource = map.getSource(params[0]);
             canvasSource.play();
             // update before pause should be rendered
@@ -185,6 +187,7 @@ export const operationHandlers = {
         doneCb();
     },
     updateImage(map, params, doneCb) {
+        params[1] = params[1].replace('./', '/test/integration/');
         map.loadImage(params[1], (error, image) => {
             if (error) throw error;
 
@@ -239,7 +242,7 @@ export const operationHandlers = {
     }
 };
 
-export async function applyOperations(map, {operations}) {
+export async function applyOperations(map, {operations}, currentTestName) {
     if (!operations) return Promise.resolve();
 
     return new Promise((resolve, reject) => {
@@ -255,7 +258,7 @@ export async function applyOperations(map, {operations}) {
             handleOperation(map, operations, ++lastOpIndex, scheduleNextOperation);
         };
         map.once('error', (e) => {
-            reject(new Error(`Error occured during ${JSON.stringify(currentOperation)}. ${e.error.stack}`));
+            reject(new Error(`${currentTestName}: Error occured during ${JSON.stringify(currentOperation)}. ${e.error.stack}`));
         });
         scheduleNextOperation(-1);
     });
@@ -281,7 +284,7 @@ function updateCanvas(imagePath) {
 
 function waitForRender(map, conditional, doneCb) {
     let frameCt = 0;
-    const wait = function() {
+    const wait = function () {
         if (conditional() && frameCt >= MIN_FRAMES) {
             doneCb();
         } else {

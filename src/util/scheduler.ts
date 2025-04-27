@@ -4,9 +4,9 @@ import {PerformanceUtils} from './performance';
 
 import type {Cancelable} from '../types/cancelable';
 
-type TaskMetadata = {
+export type TaskMetadata = {
     type: 'message' | 'maybePrepare' | 'parseTile';
-    isSymbolTile: boolean | null | undefined;
+    isSymbolTile?: boolean;
     zoom?: number;
 };
 
@@ -115,13 +115,7 @@ class Scheduler {
     }
 }
 
-function getPriority(
-    {
-        type,
-        isSymbolTile,
-        zoom,
-    }: TaskMetadata,
-): number {
+function getPriority({type, isSymbolTile, zoom}: TaskMetadata): number {
     zoom = zoom || 0;
     if (type === 'message') return 0;
     if (type === 'maybePrepare' && !isSymbolTile) return 100 - zoom;

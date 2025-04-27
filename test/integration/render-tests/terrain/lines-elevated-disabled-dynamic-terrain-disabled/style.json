@@ -4,7 +4,6 @@
     "test": {
       "height": 300,
       "width": 512,
-      "allowed": 0.0021,
       "operations": [
       ]
     }
@@ -31,7 +30,6 @@
       0
     ]
   },
-  "sprite": "local://sprites/emerald",
   "lights": [
     {
       "type": "ambient",

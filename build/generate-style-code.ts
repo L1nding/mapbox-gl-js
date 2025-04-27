@@ -1,4 +1,3 @@
-'use strict';
 
 import fs from 'fs';
 import ejs from 'ejs';
@@ -101,7 +100,7 @@ global.defaultValue = function (property) {
         if (typeof property.default !== 'string') {
             return JSON.stringify(property.default);
         } else {
-            const {r, g, b, a} = Color.parse(property.default) as Color;
+            const {r, g, b, a} = Color.parse(property.default);
             return `new Color(${r}, ${g}, ${b}, ${a})`;
         }
     default: throw new Error(`unknown type for ${property.name}`);
@@ -155,7 +154,7 @@ const layers = Object.keys(spec.layer.type.values).map((type) => {
         return memo;
     }, []);
 
-    let paintProperties = Object.keys(paintSpec).reduce<Array<any>>((memo, name) => {
+    const paintProperties = Object.keys(paintSpec).reduce<Array<any>>((memo, name) => {
         paintSpec[name].name = name;
         paintSpec[name].type_ = type;
         memo.push(paintSpec[name]);
@@ -182,7 +181,7 @@ for (const layer of layers) {
     let styleDir = '..';
     let outputDir = `src/style/style_layer`;
     let properties = layerPropertiesJs;
-    if (layer.type === 'model') {
+    if (layer.type === 'model' || layer.type === 'building') {
         srcDir = '../../../src';
         styleDir = '../../../src/style';
         outputDir = `3d-style/style/style_layer`;

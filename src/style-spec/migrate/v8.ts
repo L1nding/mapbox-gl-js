@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/ban-ts-comment */
 // @ts-nocheck
 import {eachSource, eachLayer, eachProperty} from '../visit';
 
@@ -33,7 +34,7 @@ function renameProperty(obj, from, to) {
     obj[to] = obj[from]; delete obj[from];
 }
 
-export default function(style) {
+export default function (style) {
     style.version = 8;
 
     // Rename properties, reverse coordinates in source and layers
